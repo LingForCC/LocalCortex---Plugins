@@ -1,0 +1,15 @@
+# macOS
+.DS_Store
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Node (in case bundled scripts add dependencies later)
+node_modules/
+
+# ZCode local session / workspace data
+.zcode/
