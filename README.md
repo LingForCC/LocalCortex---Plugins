@@ -13,6 +13,7 @@ than the opt-in MCP server.
 | Folder | Targets | Contents |
 |---|---|---|
 | [`zcode-plugin`](zcode-plugin) | ZCode | A local marketplace + the `localcortex` plugin (skill: `start-work` / `/start-work`). |
+| [`kimi-plugin`](kimi-plugin) | Kimi Code | A local marketplace + the `localcortex` plugin (skill: `start-work` / `/skill:start-work`). |
 
 (More ecosystems — e.g. Claude, Codex — may be added as sibling folders later.)
 
@@ -31,17 +32,28 @@ than the opt-in MCP server.
 ```
 LocalCortex---Plugins/
 ├── README.md
-└── zcode-plugin/                  # ZCode distribution
+├── zcode-plugin/                  # ZCode distribution
+│   ├── marketplace.json           # local marketplace (registers localcortex)
+│   └── plugins/
+│       └── localcortex/
+│           ├── .zcode-plugin/plugin.json
+│           ├── README.md
+│           └── skills/
+│               └── start-work/
+│                   ├── SKILL.md
+│                   └── scripts/lc.js   # JXA helper wrapping the 7 sdef commands
+└── kimi-plugin/                   # Kimi Code distribution
     ├── marketplace.json           # local marketplace (registers localcortex)
     └── plugins/
         └── localcortex/
-            ├── .zcode-plugin/plugin.json
+            ├── kimi.plugin.json
             ├── README.md
             └── skills/
                 └── start-work/
                     ├── SKILL.md
-                    └── scripts/lc.js   # JXA helper wrapping the 7 sdef commands
+                    └── scripts/lc.js   # same JXA helper
 ```
 
-See [`zcode-plugin/README.md`](zcode-plugin/README.md) for ZCode-specific
+See [`zcode-plugin/README.md`](zcode-plugin/README.md) and
+[`kimi-plugin/README.md`](kimi-plugin/README.md) for ecosystem-specific
 install instructions.
