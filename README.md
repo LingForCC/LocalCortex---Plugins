@@ -12,11 +12,12 @@ than the opt-in MCP server.
 
 | Folder | Targets | Contents |
 |---|---|---|
+| [`claude-plugin`](claude-plugin) | Claude Code | A local marketplace + the `localcortex` plugin (skill: `start-work` / `/start-work`). |
 | [`codex-plugin`](codex-plugin) | Codex | A local marketplace + the `localcortex` plugin (skill: `start-work`). |
 | [`zcode-plugin`](zcode-plugin) | ZCode | A local marketplace + the `localcortex` plugin (skill: `start-work` / `/start-work`). |
 | [`kimi-plugin`](kimi-plugin) | Kimi Code | A local marketplace + the `localcortex` plugin (skill: `start-work` / `/skill:start-work`). |
 
-(More ecosystems — e.g. Claude — may be added as sibling folders later.)
+(More ecosystems may be added as sibling folders later.)
 
 ## Requirements (all distributions)
 
@@ -33,6 +34,17 @@ than the opt-in MCP server.
 ```
 LocalCortex---Plugins/
 ├── README.md
+├── claude-plugin/                 # Claude Code distribution
+│   ├── .claude-plugin/
+│   │   └── marketplace.json       # local marketplace (registers localcortex)
+│   └── plugins/
+│       └── localcortex/
+│           ├── .claude-plugin/plugin.json
+│           ├── README.md
+│           └── skills/
+│               └── start-work/
+│                   ├── SKILL.md
+│                   └── scripts/lc.js   # JXA helper wrapping the 7 sdef commands
 ├── codex-plugin/                  # Codex distribution
 │   ├── .agents/plugins/
 │   │   └── marketplace.json       # local marketplace (registers localcortex)
@@ -67,6 +79,7 @@ LocalCortex---Plugins/
 ```
 
 See each distribution's README for ecosystem-specific install instructions:
+[`claude-plugin`](claude-plugin/README.md),
 [`codex-plugin`](codex-plugin/README.md),
 [`zcode-plugin`](zcode-plugin/README.md), and
 [`kimi-plugin`](kimi-plugin/README.md).
