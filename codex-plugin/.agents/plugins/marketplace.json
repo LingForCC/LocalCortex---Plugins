@@ -1,0 +1,20 @@
+{
+  "name": "localcortex-plugins",
+  "interface": {
+    "displayName": "LocalCortex Plugins"
+  },
+  "plugins": [
+    {
+      "name": "localcortex",
+      "source": {
+        "source": "local",
+        "path": "./plugins/localcortex"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
