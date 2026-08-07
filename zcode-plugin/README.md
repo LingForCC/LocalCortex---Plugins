@@ -26,6 +26,12 @@ parity with its MCP tools; this plugin wraps them.
     Effort. Read-only; matches `worker: agent` + label case-insensitively, and
     never modifies tasks. See
     [`plugins/localcortex/skills/lc-fetch-agent-task/SKILL.md`](plugins/localcortex/skills/lc-fetch-agent-task/SKILL.md).
+  - **`lc-complete-task`** (`/lc-complete-task`) — complete (default) or reopen a
+    LocalCortex task by id. Completing also completes the subtask subtree,
+    auto-unblocks tasks waiting on it, and spawns a fresh open copy if the task
+    carries a recurrence rule. Only the completion transition lives here; it
+    does not create, rename, re-date, or delete tasks. See
+    [`plugins/localcortex/skills/lc-complete-task/SKILL.md`](plugins/localcortex/skills/lc-complete-task/SKILL.md).
 
 ## Requirements
 
@@ -78,7 +84,10 @@ zcode-plugin/
             ├── lc-fetch-effort/
             │   ├── SKILL.md
             │   └── scripts/lc.js
-            └── lc-fetch-agent-task/
+            ├── lc-fetch-agent-task/
+            │   ├── SKILL.md
+            │   └── scripts/lc.js
+            └── lc-complete-task/
                 ├── SKILL.md
                 └── scripts/lc.js
 ```

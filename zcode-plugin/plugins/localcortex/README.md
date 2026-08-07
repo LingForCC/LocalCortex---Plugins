@@ -24,6 +24,12 @@ required. The LocalCortex app exposes seven scripting commands (`list efforts`,
   Effort. Read-only; matches `worker: agent` + label case-insensitively, and
   never modifies tasks. See
   [`skills/lc-fetch-agent-task/SKILL.md`](skills/lc-fetch-agent-task/SKILL.md).
+- **`lc-complete-task`** (`/lc-complete-task`) — complete (default) or reopen a
+  LocalCortex task by id. Completing also completes the subtask subtree,
+  auto-unblocks tasks waiting on it, and spawns a fresh open copy if the task
+  carries a recurrence rule. Only the completion transition lives here; it does
+  not create, rename, re-date, or delete tasks. See
+  [`skills/lc-complete-task/SKILL.md`](skills/lc-complete-task/SKILL.md).
 
 ## Requirements
 

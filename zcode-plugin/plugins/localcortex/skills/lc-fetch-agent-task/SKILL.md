@@ -12,7 +12,7 @@ description: >-
   tasks. For starting/working a returned task, use the start-work skill.
 argument-hint: "<effortId> <agent label>"
 allowed-tools: [Bash, Read]
-version: 0.1.4
+version: 0.1.6
 license: MIT
 ---
 
