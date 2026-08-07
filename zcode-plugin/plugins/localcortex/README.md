@@ -19,6 +19,11 @@ required. The LocalCortex app exposes seven scripting commands (`list efforts`,
   Read-only; resolves exact-then-substring (case-insensitive), asks for
   disambiguation on several matches, and never touches tasks. See
   [`skills/lc-fetch-effort/SKILL.md`](skills/lc-fetch-effort/SKILL.md).
+- **`lc-fetch-agent-task`** (`/lc-fetch-agent-task`) — find the active tasks
+  assigned to a specific agent (`worker_label`, e.g. `zcode`) inside a given
+  Effort. Read-only; matches `worker: agent` + label case-insensitively, and
+  never modifies tasks. See
+  [`skills/lc-fetch-agent-task/SKILL.md`](skills/lc-fetch-agent-task/SKILL.md).
 
 ## Requirements
 
