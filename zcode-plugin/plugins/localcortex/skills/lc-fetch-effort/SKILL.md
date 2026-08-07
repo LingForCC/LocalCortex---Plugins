@@ -11,7 +11,7 @@ description: >-
   task work use the start-work skill instead.
 argument-hint: "[effort name]"
 allowed-tools: [Bash, Read]
-version: 0.1.3
+version: 0.1.4
 license: MIT
 ---
 

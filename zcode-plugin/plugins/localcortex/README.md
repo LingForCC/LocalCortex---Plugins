@@ -24,6 +24,11 @@ required. The LocalCortex app exposes seven scripting commands (`list efforts`,
   Effort. Read-only; matches `worker: agent` + label case-insensitively, and
   never modifies tasks. See
   [`skills/lc-fetch-agent-task/SKILL.md`](skills/lc-fetch-agent-task/SKILL.md).
+- **`lc-update-task`** (`/lc-update-task`) — update a known task by id: change
+  its name, notes, status, worker / worker_label, defer date, due date, or
+  recurrence rule. Applies only the fields you name; does not create, complete,
+  or delete tasks (use `start-work` for those). See
+  [`skills/lc-update-task/SKILL.md`](skills/lc-update-task/SKILL.md).
 
 ## Requirements
 
