@@ -4,7 +4,7 @@ A Kimi Code plugin that drives the **LocalCortex** macOS task manager through
 its **JXA / AppleScript automation surface** (`osascript`) — no MCP server
 required.
 
-## Skill
+## Skills
 
 - **`start-work`** (`/skill:start-work`) — start, pick up, or resume a
   LocalCortex task by id or name, then run the full lifecycle: discover the
@@ -12,6 +12,29 @@ required.
   write artifacts into the effort's workspace folder, complete the task, and
   create the follow-up as a sibling. See
   [`skills/start-work/SKILL.md`](skills/start-work/SKILL.md).
+- **`lc-fetch-effort`** (`/skill:lc-fetch-effort`) — look up a single Effort by
+  name and return its id, workspace folder name, and on-disk workspace path.
+  Read-only; resolves exact-then-substring (case-insensitive), asks for
+  disambiguation on several matches, and never touches tasks. See
+  [`skills/lc-fetch-effort/SKILL.md`](skills/lc-fetch-effort/SKILL.md).
+- **`lc-fetch-agent-task`** (`/skill:lc-fetch-agent-task`) — find the active
+  tasks assigned to a specific agent (`worker_label`, e.g. `kimi`) inside a
+  given Effort. Read-only; matches `worker: agent` + label case-insensitively,
+  and never modifies tasks. See
+  [`skills/lc-fetch-agent-task/SKILL.md`](skills/lc-fetch-agent-task/SKILL.md).
+- **`lc-complete-task`** (`/skill:lc-complete-task`) — complete (default) or
+  reopen a LocalCortex task by id. Completing also completes the subtask
+  subtree, auto-unblocks tasks waiting on it, and spawns a fresh open copy if
+  the task carries a recurrence rule. Only the completion transition lives
+  here; it does not create, rename, re-date, or delete tasks. See
+  [`skills/lc-complete-task/SKILL.md`](skills/lc-complete-task/SKILL.md).
+- **`lc-start-job`** (`/skill:lc-start-job`) — set up a recurring autonomous
+  worker that, every 5 minutes, polls a named Effort for an **open** task
+  assigned to a given agent (`worker_label`, e.g. `kimi`), does that task's
+  work, writes artifacts into the effort's workspace folder, and completes it.
+  Validates the effort + agent label at setup, then creates a Kimi Code cron
+  job; the scheduled run is self-contained and does not chain sibling skills.
+  See [`skills/lc-start-job/SKILL.md`](skills/lc-start-job/SKILL.md).
 
 ## Requirements
 
@@ -40,7 +63,19 @@ localcortex/
 ├── kimi.plugin.json                    # plugin manifest
 ├── README.md                           # this file
 └── skills/
-    └── start-work/
+    ├── start-work/
+    │   ├── SKILL.md
+    │   └── scripts/lc.js               # JXA helper wrapping the 7 sdef commands
+    ├── lc-fetch-effort/
+    │   ├── SKILL.md
+    │   └── scripts/lc.js               # each skill bundles its own copy
+    ├── lc-fetch-agent-task/
+    │   ├── SKILL.md
+    │   └── scripts/lc.js
+    ├── lc-complete-task/
+    │   ├── SKILL.md
+    │   └── scripts/lc.js
+    └── lc-start-job/
         ├── SKILL.md
-        └── scripts/lc.js               # JXA helper wrapping the 7 sdef commands
+        └── scripts/lc.js
 ```
