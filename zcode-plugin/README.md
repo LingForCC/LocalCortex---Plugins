@@ -32,6 +32,13 @@ parity with its MCP tools; this plugin wraps them.
     carries a recurrence rule. Only the completion transition lives here; it
     does not create, rename, re-date, or delete tasks. See
     [`plugins/localcortex/skills/lc-complete-task/SKILL.md`](plugins/localcortex/skills/lc-complete-task/SKILL.md).
+  - **`lc-start-job`** (`/lc-start-job`) — set up a recurring autonomous worker
+    that, every 5 minutes, polls a named Effort for an **open** task assigned to
+    a given agent (`worker_label`, e.g. `zcode`), does that task's work, writes
+    artifacts into the effort's workspace folder, and completes it. Validates
+    the effort + agent label at setup, then creates the ZCode automation; the
+    scheduled run is self-contained and does not chain sibling skills. See
+    [`plugins/localcortex/skills/lc-start-job/SKILL.md`](plugins/localcortex/skills/lc-start-job/SKILL.md).
 
 ## Requirements
 
@@ -87,7 +94,10 @@ zcode-plugin/
             ├── lc-fetch-agent-task/
             │   ├── SKILL.md
             │   └── scripts/lc.js
-            └── lc-complete-task/
+            ├── lc-complete-task/
+            │   ├── SKILL.md
+            │   └── scripts/lc.js
+            └── lc-start-job/
                 ├── SKILL.md
                 └── scripts/lc.js
 ```

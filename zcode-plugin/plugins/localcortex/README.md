@@ -30,6 +30,13 @@ required. The LocalCortex app exposes seven scripting commands (`list efforts`,
   carries a recurrence rule. Only the completion transition lives here; it does
   not create, rename, re-date, or delete tasks. See
   [`skills/lc-complete-task/SKILL.md`](skills/lc-complete-task/SKILL.md).
+- **`lc-start-job`** (`/lc-start-job`) — set up a recurring autonomous worker
+  that, every 5 minutes, polls a named Effort for an **open** task assigned to
+  a given agent (`worker_label`, e.g. `zcode`), does that task's work, writes
+  artifacts into the effort's workspace folder, and completes it. Validates the
+  effort + agent label at setup, then creates the ZCode automation; the
+  scheduled run is self-contained and does not chain sibling skills. See
+  [`skills/lc-start-job/SKILL.md`](skills/lc-start-job/SKILL.md).
 
 ## Requirements
 
