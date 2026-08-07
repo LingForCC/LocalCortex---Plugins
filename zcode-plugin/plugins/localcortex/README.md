@@ -6,7 +6,7 @@ required. The LocalCortex app exposes seven scripting commands (`list efforts`,
 `list tasks`, `get task`, `workspace path`, `create task`, `update task`,
 `complete task`) that have parity with its MCP tools; this plugin wraps them.
 
-## Skill
+## Skills
 
 - **`start-work`** (`/start-work`) — start, pick up, or resume a LocalCortex
   task by id or name, then run the full lifecycle: discover the task, claim it
@@ -14,6 +14,11 @@ required. The LocalCortex app exposes seven scripting commands (`list efforts`,
   into the effort's workspace folder, complete the task, and create the
   follow-up as a sibling. See
   [`skills/start-work/SKILL.md`](skills/start-work/SKILL.md).
+- **`lc-fetch-effort`** (`/lc-fetch-effort`) — look up a single Effort by name
+  and return its id, workspace folder name, and on-disk workspace path.
+  Read-only; resolves exact-then-substring (case-insensitive), asks for
+  disambiguation on several matches, and never touches tasks. See
+  [`skills/lc-fetch-effort/SKILL.md`](skills/lc-fetch-effort/SKILL.md).
 
 ## Requirements
 
@@ -42,7 +47,8 @@ All commands go through one bundled JXA helper:
 ```bash
 osascript -l JavaScript "$LC_JS" <subcommand> [args]
 ```
-where `lc.js` lives at `skills/start-work/scripts/lc.js`. Free-text inputs
-(task name, notes) are passed via **environment variables** so that quotes,
-newlines, backticks, and `$` are handled safely; UUIDs travel as argv. See the
-command reference table in `skills/start-work/SKILL.md`.
+where `lc.js` lives at `skills/<skill>/scripts/lc.js` (each skill bundles its
+own copy). Free-text inputs (task name, effort name, notes) are passed via
+**environment variables** so that quotes, newlines, backticks, and `$` are
+handled safely; UUIDs travel as argv. See the command reference table in each
+skill's `SKILL.md`.

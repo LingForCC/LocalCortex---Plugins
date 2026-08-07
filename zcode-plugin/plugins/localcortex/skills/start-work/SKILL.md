@@ -11,7 +11,7 @@ description: >-
   complete the task, then create the follow-up as a sibling.
 argument-hint: "[task-id | task name | effort name]"
 allowed-tools: [Bash, Read, Write, Edit]
-version: 0.1.1
+version: 0.1.2
 license: MIT
 ---
 
