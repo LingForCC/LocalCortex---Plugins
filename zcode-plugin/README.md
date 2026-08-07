@@ -26,11 +26,6 @@ parity with its MCP tools; this plugin wraps them.
     Effort. Read-only; matches `worker: agent` + label case-insensitively, and
     never modifies tasks. See
     [`plugins/localcortex/skills/lc-fetch-agent-task/SKILL.md`](plugins/localcortex/skills/lc-fetch-agent-task/SKILL.md).
-  - **`lc-update-task`** (`/lc-update-task`) — update a known task by id:
-    change its name, notes, status, worker / worker_label, defer date, due
-    date, or recurrence rule. Applies only the fields you name; does not
-    create, complete, or delete tasks (use `start-work` for those). See
-    [`plugins/localcortex/skills/lc-update-task/SKILL.md`](plugins/localcortex/skills/lc-update-task/SKILL.md).
 
 ## Requirements
 
@@ -83,10 +78,7 @@ zcode-plugin/
             ├── lc-fetch-effort/
             │   ├── SKILL.md
             │   └── scripts/lc.js
-            ├── lc-fetch-agent-task/
-            │   ├── SKILL.md
-            │   └── scripts/lc.js
-            └── lc-update-task/
+            └── lc-fetch-agent-task/
                 ├── SKILL.md
                 └── scripts/lc.js
 ```
