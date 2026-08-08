@@ -13,7 +13,7 @@ description: >-
   effort", "delegate open kimi tasks every 5 min".
 argument-hint: "[effort name] [agent label] [cwd]"
 allowed-tools: [Bash, Read]
-version: 0.1.10
+version: 0.1.11
 license: MIT
 ---
 
@@ -98,7 +98,7 @@ unsupported.
 | label | spawn command (headless) |
 |---|---|
 | `zcode` | `zcode --prompt "<worker prompt>" --cwd "<CWD>" --mode yolo` (see the full invocation in [The scheduled run](#5-spawn-the-worker-blocking) — zcode is an Electron-as-Node bundle, not a plain `node` script) |
-| `kimi` | `cd "<CWD>" && kimi -y -p "<worker prompt>"` (kimi has no `--cwd` flag, so set cwd with `cd`; `-y` is its yolo/auto-approve flag) |
+| `kimi` | `cd "<CWD>" && kimi -p "<worker prompt>"` (kimi has no `--cwd` flag, so set cwd with `cd`; `-p` prompt mode is already non-interactive and auto-approves tool calls — do **not** add `-y`/`--yolo` or `--auto`, they are incompatible with `-p` on kimi ≥ 0.34.0) |
 
 The **worker prompt** is the same one-sentence instruction for both (see
 [Worker prompt](#worker-prompt)).
@@ -353,11 +353,13 @@ ELECTRON_RUN_AS_NODE=1 \
 ```
 
 **If `worker_label` is `kimi`** — `kimi` is on `PATH` (`~/.kimi-code/bin/kimi`)
-and has **no `--cwd` flag**, so set the working directory with `cd`; `-y`
-auto-approves tool calls (yolo):
+and has **no `--cwd` flag**, so set the working directory with `cd`. Use `-p`
+prompt mode only — it is already non-interactive and auto-approves tool calls on
+its own, so do **not** add `-y`/`--yolo` or `--auto`: on kimi ≥ 0.34.0 those
+flags are rejected when combined with `-p`.
 
 ```bash
-cd "<CWD>" && kimi -y -p "<worker prompt>"
+cd "<CWD>" && kimi -p "<worker prompt>"
 ```
 
 Report the spawn's pass/fail by its exit code:
