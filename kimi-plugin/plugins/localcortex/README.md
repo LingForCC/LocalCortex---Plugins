@@ -29,6 +29,13 @@ required.
   Validates the effort + agent label at setup, then creates a Kimi Code cron
   job; the scheduled run is self-contained and does not chain sibling skills.
   See [`skills/lc-start-job/SKILL.md`](skills/lc-start-job/SKILL.md).
+- **`lc-start-work`** (`/skill:lc-start-work`) — run **one** autonomous
+  pull-work-and-complete tick on demand: find the next **open** task assigned
+  to a given agent inside a named Effort, claim it, do the work, write
+  artifacts into the effort's workspace folder, and complete it — then stop.
+  This is the same flow each scheduled tick of `lc-start-job` runs, invoked
+  once; it creates no cron job. See
+  [`skills/lc-start-work/SKILL.md`](skills/lc-start-work/SKILL.md).
 
 ## Requirements
 
@@ -66,7 +73,10 @@ localcortex/
     ├── lc-complete-task/
     │   ├── SKILL.md
     │   └── scripts/lc.js
-    └── lc-start-job/
+    ├── lc-start-job/
+    │   ├── SKILL.md
+    │   └── scripts/lc.js
+    └── lc-start-work/
         ├── SKILL.md
         └── scripts/lc.js
 ```
