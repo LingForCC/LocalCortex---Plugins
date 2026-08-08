@@ -2,22 +2,17 @@
 name: lc-start-job
 description: >-
   Set up a recurring autonomous LocalCortex worker — the macOS task manager app
-  — that polls a named Effort for an open task assigned to a given agent and
-  does the work, then completes the task. Drives LocalCortex through its
-  JXA/AppleScript automation surface (osascript), not MCP. Use whenever the
-  user wants an agent to run unattended on a schedule — e.g. "start a job that
-  checks the Build effort every 5 minutes for tasks assigned to zcode and does
-  them", "automate my zcode agent on the Payments effort", "set up a polling
-  worker for …". At setup time it validates the effort + agent label, creates a
-  ZCode automation that runs every 5 minutes, and arms a prompt the agent runs
-  on each tick. Each tick: find the first open agent task → read its name and
-  notes → do the work → write artifacts into the effort workspace → complete
-  the task. If no open task exists the tick does nothing. This skill both sets
-  up the job AND describes what each run does — the scheduled run is headless,
-  so it must be self-contained and must not chain sibling skills.
+  — that polls a named Effort every 5 minutes for an open task assigned to a
+  given agent, does the work, and completes it. Drives LocalCortex through its
+  JXA/AppleScript surface (osascript), not MCP. Use whenever the user wants an
+  agent to run unattended on a schedule — e.g. "start a job that checks the
+  Build effort for tasks assigned to zcode and does them", "automate my zcode
+  agent on Payments", "set up a polling worker for …". At setup it validates
+  the effort + agent label, creates a ZCode automation, and runs the first tick
+  immediately; the scheduled run is headless and self-contained.
 argument-hint: "[effort name] [agent label]"
 allowed-tools: [Bash, Read, Write, Edit]
-version: 0.1.7
+version: 0.1.8
 license: MIT
 ---
 
@@ -25,9 +20,10 @@ license: MIT
 
 Set up a scheduled ZCode automation that, every 5 minutes, looks for an **open
 task** assigned to a given **agent** inside a named **Effort** and does the work,
-then completes it. The setup step validates the effort and agent label first and
-then creates the automation. The scheduled run is **headless** — it must be fully
-self-contained, because a headless run cannot chain to sibling skills. Drive
+then completes it. The setup step validates the effort and agent label first,
+creates the automation, and runs the first tick immediately. The scheduled run
+is **headless** — it must be fully self-contained, because a headless run
+cannot chain to sibling skills. Drive
 LocalCortex **exclusively through its JXA/AppleScript surface** via the bundled
 `lc.js` helper — never use `mcp__localcortex__*` tools in this skill's flow.
 
@@ -43,7 +39,8 @@ on its own".
 This skill does **two things**:
 
 1. **At setup time (interactive, with the user):** validate the effort name and
-   agent label, then create the ZCode automation.
+   agent label, create the ZCode automation, then run the first tick
+   immediately in the current session.
 2. **On each tick (headless):** run the polling loop described in
    [The scheduled run](#the-scheduled-run-each-tick-headless) below.
 
@@ -205,11 +202,22 @@ flow, because the run is headless and has no access to this conversation.
   `<EFFORT_NAME>`, `<EFFORT_ID>`, and `<AGENT_LABEL>` filled in with the
   validated values. Do not paraphrase it.
 
-### Step 4 — Report and tell the user how to stop it
+### Step 4 — Run the first tick immediately
+
+Do not wait ~5 minutes for the automation's first fire. Right after creating
+it, run one tick now, in this session: follow the
+[Scheduled run](#the-scheduled-run-each-tick-headless) flow below exactly as
+the automation prompt will, with `<EFFORT_NAME>`, `<EFFORT_ID>`, and
+`<AGENT_LABEL>` filled in with the validated values. If there is no open task,
+the tick does nothing — that is fine; the recurring automation will pick up
+future tasks.
+
+### Step 5 — Report and tell the user how to stop it
 
 Report plainly: the effort (name + id), the agent label, that the automation
-is recurring every 5 minutes, and that the first tick will run within ~5
-minutes. **Tell the user how to stop it:** the automation persists until
+is recurring every 5 minutes, and that the first tick has already run —
+report its outcome (which task was worked and completed, or that no open task
+was found). **Tell the user how to stop it:** the automation persists until
 deleted; they can list automations (`CronList`) and delete the job by id
 (`CronDelete`), or ask you to stop it.
 
@@ -347,6 +355,7 @@ run bounded and the automation easy to reason about.
 ## Reporting to the user
 
 At setup, report the effort (name + id), the agent label, the schedule (every
-5 minutes, recurring), and **how to stop it** (list with `CronList`, delete by
-id with `CronDelete`). During the scheduled run there is no user to report to;
-record progress in the task notes instead.
+5 minutes, recurring), the outcome of the first tick (already run at setup),
+and **how to stop it** (list with `CronList`, delete by id with `CronDelete`).
+During the scheduled run there is no user to report to; record progress in the
+task notes instead.
