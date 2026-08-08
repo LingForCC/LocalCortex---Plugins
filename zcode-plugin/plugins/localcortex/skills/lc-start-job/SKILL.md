@@ -47,7 +47,7 @@ This skill does **two things**:
 ## When NOT to use this skill
 
 - The user points at a **specific task** and wants to work on it **now**, by id
-  or name → use `start-work`. This skill is for *unattended, recurring* work,
+  or name → use `lc-start-work`. This skill is for *unattended, recurring* work,
   not one-off tasks.
 - The user only wants to **look up** an effort → use `lc-fetch-effort`.
 - The user only wants to **look up** an agent's tasks → use
@@ -344,8 +344,8 @@ run bounded and the automation easy to reason about.
   make the most reasonable interpretation, do the work, and record your
   interpretation in the task notes. Do not block waiting for input.
 - **Do not create follow-up tasks.** A scheduled worker completes the open task
-  it picked up; it does not run the `start-work` follow-up flow. If a task
-  clearly needs follow-up, say so in the task notes and leave it at that.
+  it picked up; it does not run the follow-up flow. If a task clearly needs
+  follow-up, say so in the task notes and leave it at that.
 - **Fail safe.** If a tick errors mid-work after the task was claimed, leave
   the task `in_progress` and stop — do not complete a task whose work did not
   finish. The next tick (or a human) can pick it up.

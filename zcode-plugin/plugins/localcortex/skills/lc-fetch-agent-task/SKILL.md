@@ -9,7 +9,7 @@ description: >-
   (osascript), not MCP. Use whenever the user asks "what is agent X working on
   in effort Y", "find the tasks assigned to zcode in …", or "show me the
   agent-owned tasks for …". Read-only; does not read full notes or modify
-  tasks. For starting/working a returned task, use the start-work skill.
+  tasks. For starting/working a returned task, use the lc-start-work skill.
 argument-hint: "<effortId> <agent label>"
 allowed-tools: [Bash, Read]
 version: 0.1.6
@@ -31,12 +31,12 @@ tasks assigned to that agent inside that effort — e.g. "what is zcode working
 on in the Build effort?", "find tasks assigned to claude in …", "show me the
 agent-owned tasks for …". This skill is read-only — it lists task summaries,
 never reads full notes or modifies tasks. If the user then wants to work on a
-returned task, hand off to the `start-work` skill with that task's id.
+returned task, hand off to the `lc-start-work` skill with that task's id.
 
 ## When NOT to use this skill
 
 - The user points at a **task** (by id or name) and wants to work on it → use
-  `start-work`.
+  `lc-start-work`.
 - The user names an **Effort** and wants to resolve its id or workspace folder
   → use `lc-fetch-effort`.
 - No effort id is in view → don't invent one. Resolve the effort first with
@@ -125,7 +125,7 @@ A single JSON object:
 - Matching is on the agent's label only — it never looks at task names or
   notes. A task with `worker: human` or `worker: none` never matches.
 - The returned `tasks` carry the **summary** fields (no `notes`); each has a
-  `has_notes` hint. Use the `start-work` skill (`tasks-get <taskId>`) if you
+  `has_notes` hint. Use `tasks-get <taskId>` directly if you
   need the full notes of a specific task.
 
 ### Errors
@@ -183,4 +183,4 @@ App-level error numbers (from LocalCortex):
 Report the essentials plainly — the agent label, the effort, and the matching
 tasks (id + name + status). Do not dump the entire task list; that's noise. If
 there are several matches, list them; if the user then wants to work on one,
-hand off to `start-work` with that task's id.
+hand off to `lc-start-work` with that task's id.

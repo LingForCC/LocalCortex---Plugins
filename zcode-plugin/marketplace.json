@@ -10,7 +10,7 @@
       "description": "LocalCortex task lifecycle skills — drives the LocalCortex macOS app through its JXA/AppleScript automation surface (osascript).",
       "displayName": "LocalCortex",
       "category": "productivity",
-      "version": "0.1.11",
+      "version": "0.1.12",
       "author": {
         "name": "Colin Liu"
       }

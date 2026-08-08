@@ -8,7 +8,7 @@ description: >-
   to find it, get its id, or locate its workspace folder — e.g. "find the
   Build LocalCortex 0.3.2 effort", "what's the effort id for Payments", "where
   is the workspace folder for Investments". Does not read or modify tasks; for
-  task work use the start-work skill instead.
+  task work use the lc-start-work skill instead.
 argument-hint: "[effort name]"
 allowed-tools: [Bash, Read]
 version: 0.1.6
@@ -28,12 +28,12 @@ When the user names an **Effort** (not a task) and wants to find it: get its
 id, confirm it exists, see whether it is archived, or locate its workspace
 folder on disk. This skill is read-only — it never reads, creates, or modifies
 tasks. If the user actually wants to work on a task within an effort, hand off
-to the `start-work` skill (which discovers tasks by id or name).
+to the `lc-start-work` skill.
 
 ## When NOT to use this skill
 
 - The user points at a **task** (an item inside an effort), not an effort → use
-  `start-work`.
+  `lc-start-work`.
 - No effort is in view and the user is just browsing → don't invent one.
 - The user already has an effort id → they don't need a lookup.
 

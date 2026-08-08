@@ -8,12 +8,6 @@ required. The LocalCortex app exposes seven scripting commands (`list efforts`,
 
 ## Skills
 
-- **`start-work`** (`/start-work`) — start, pick up, or resume a LocalCortex
-  task by id or name, then run the full lifecycle: discover the task, claim it
-  as `agent`/`zcode`, collect (but don't create) a follow-up, write artifacts
-  into the effort's workspace folder, complete the task, and create the
-  follow-up as a sibling. See
-  [`skills/start-work/SKILL.md`](skills/start-work/SKILL.md).
 - **`lc-fetch-effort`** (`/lc-fetch-effort`) — look up a single Effort by name
   and return its id, workspace folder name, and on-disk workspace path.
   Read-only; resolves exact-then-substring (case-insensitive), asks for

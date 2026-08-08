@@ -61,7 +61,7 @@ This skill does **two things**:
 - The user wants to run **one** autonomous pull-work-and-complete tick **right
   now**, on demand → use `lc-start-work` (the very skill this one delegates to).
 - The user points at a **specific task** and wants to work on it **now**, by id
-  or name → use `start-work`.
+  or name → use `lc-start-work`.
 - The user only wants to **look up** an effort → use `lc-fetch-effort`.
 - The user only wants to **look up** an agent's tasks → use
   `lc-fetch-agent-task`.

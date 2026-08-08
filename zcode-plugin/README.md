@@ -10,12 +10,6 @@ parity with its MCP tools; this plugin wraps them.
 ## Plugin
 
 - **`localcortex`** → skills:
-  - **`start-work`** (`/start-work`) — start, pick up, or resume a LocalCortex
-    task by id or name, then run the full lifecycle: discover the task, claim
-    it as `agent`/`zcode`, collect (but don't create) a follow-up, write
-    artifacts into the effort's workspace folder, complete the task, and create
-    the follow-up as a sibling. See
-    [`plugins/localcortex/skills/start-work/SKILL.md`](plugins/localcortex/skills/start-work/SKILL.md).
   - **`lc-fetch-effort`** (`/lc-fetch-effort`) — look up a single Effort by
     name and return its id, workspace folder name, and on-disk workspace path.
     Read-only (no task access); resolves exact-then-substring,
@@ -93,9 +87,6 @@ zcode-plugin/
         ├── .zcode-plugin/plugin.json
         ├── README.md
         └── skills/
-            ├── start-work/
-            │   ├── SKILL.md
-            │   └── scripts/lc.js
             ├── lc-fetch-effort/
             │   ├── SKILL.md
             │   └── scripts/lc.js

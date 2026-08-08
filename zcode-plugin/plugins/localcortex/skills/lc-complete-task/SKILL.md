@@ -10,8 +10,8 @@ description: >-
   / mark done / close / wrap up / reopen / un-complete a known task, e.g.
   "complete task X", "mark … done", "reopen task X", "un-complete …". Only the
   completion transition lives here; it does not create, rename, re-date, or
-  delete tasks. For the full lifecycle (claim, work, complete + create a
-  follow-up) use the start-work skill.
+  delete tasks. For the full lifecycle (claim, work, complete) use the
+  lc-start-work skill.
 argument-hint: "<taskId>"
 allowed-tools: [Bash, Read]
 version: 0.1.6
@@ -36,19 +36,18 @@ below for how to verify it before acting.
 ## When NOT to use this skill
 
 - The user wants the **full lifecycle** — discover the task, claim it as an
-  agent, do the work, complete it, and create a follow-up sibling → use
-  `start-work`. That skill runs `task-complete` internally as its completion
-  step, but the lifecycle (claiming, artifacts, follow-up) belongs there, not
-  here. Reach for this skill only when the user wants the completion
-  transition by itself on a task already in view.
+  agent, do the work, and complete it → use `lc-start-work`. That skill runs
+  `task-complete` internally as its completion step, but the lifecycle
+  (claiming, artifacts) belongs there, not here. Reach for this skill only when
+  the user wants the completion transition by itself on a task already in view.
 - The user wants to **create / rename / re-date / reassign / set notes on** a
-  task (any field edit) → `start-work` does not edit arbitrary fields either;
-  completion is the only mutation this skill performs.
+  task (any field edit) → `lc-start-work` does not edit arbitrary fields
+  either; completion is the only mutation this skill performs.
 - The user only has a task **name**, not an id → resolve it first with
-  `start-work`'s discovery flow (or `lc-fetch-agent-task` if it is an
-  agent-owned task inside a known effort), then come back here with the id.
+  `lc-fetch-agent-task` (if it is an agent-owned task inside a known effort),
+  then come back here with the id.
 - The user wants to **find / look up** tasks or efforts (read-only) → use
-  `lc-fetch-agent-task`, `lc-fetch-effort`, or `start-work`'s discovery flow.
+  `lc-fetch-agent-task` or `lc-fetch-effort`.
 - No task id is in view and the user is not pointing at a task → don't invent
   one.
 
