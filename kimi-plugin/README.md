@@ -9,12 +9,9 @@ parity with its MCP tools; this plugin wraps them.
 
 ## Plugin
 
-- **`localcortex`** → skill **`start-work`** (`/skill:start-work`) — start,
-  pick up, or resume a LocalCortex task by id or name, then run the full
-  lifecycle: discover the task, claim it as `agent`/`kimi`, collect (but
-  don't create) a follow-up, write artifacts into the effort's workspace
-  folder, complete the task, and create the follow-up as a sibling. See
-  [`plugins/localcortex/skills/start-work/SKILL.md`](plugins/localcortex/skills/start-work/SKILL.md).
+- **`localcortex`** → skills **`lc-fetch-effort`**, **`lc-fetch-agent-task`**,
+  **`lc-complete-task`**, and **`lc-start-job`**. See
+  [`plugins/localcortex/README.md`](plugins/localcortex/README.md).
 
 ## Requirements
 
@@ -50,12 +47,11 @@ All commands go through one bundled JXA helper:
 ```bash
 osascript -l JavaScript "$LC_JS" <subcommand> [args]
 ```
-where `lc.js` lives at `plugins/localcortex/skills/start-work/scripts/lc.js`
-and the skill resolves it via the `${KIMI_SKILL_DIR}` placeholder. Free-text
+where each skill bundles its own copy of `lc.js` at
+`plugins/localcortex/skills/<skill>/scripts/lc.js` and resolves it via the
+`${KIMI_SKILL_DIR}` placeholder. Free-text
 inputs (task name, notes) are passed via **environment variables** so that
 quotes, newlines, backticks, and `$` are handled safely; UUIDs travel as argv.
-See the command reference table in
-[`plugins/localcortex/skills/start-work/SKILL.md`](plugins/localcortex/skills/start-work/SKILL.md).
 
 ## Layout
 
@@ -68,7 +64,16 @@ kimi-plugin/
         ├── kimi.plugin.json       # plugin manifest
         ├── README.md
         └── skills/
-            └── start-work/
+            ├── lc-fetch-effort/
+            │   ├── SKILL.md
+            │   └── scripts/lc.js
+            ├── lc-fetch-agent-task/
+            │   ├── SKILL.md
+            │   └── scripts/lc.js
+            ├── lc-complete-task/
+            │   ├── SKILL.md
+            │   └── scripts/lc.js
+            └── lc-start-job/
                 ├── SKILL.md
                 └── scripts/lc.js
 ```
