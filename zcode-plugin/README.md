@@ -39,6 +39,14 @@ parity with its MCP tools; this plugin wraps them.
     the effort + agent label at setup, then creates the ZCode automation; the
     scheduled run is self-contained and does not chain sibling skills. See
     [`plugins/localcortex/skills/lc-start-job/SKILL.md`](plugins/localcortex/skills/lc-start-job/SKILL.md).
+  - **`lc-start-work`** (`/lc-start-work`) — run **one** autonomous
+    pull-work-and-complete tick on demand: find the next **open** task assigned
+    to a given agent (`worker_label`, e.g. `zcode`) in a named Effort, claim it,
+    do the work, write artifacts into the effort's workspace folder, and
+    complete it — one task, then stop. This is the same flow each scheduled tick
+    of `lc-start-job` runs, just invoked once with no ZCode automation created.
+    See
+    [`plugins/localcortex/skills/lc-start-work/SKILL.md`](plugins/localcortex/skills/lc-start-work/SKILL.md).
 
 ## Requirements
 
@@ -97,7 +105,10 @@ zcode-plugin/
             ├── lc-complete-task/
             │   ├── SKILL.md
             │   └── scripts/lc.js
-            └── lc-start-job/
+            ├── lc-start-job/
+            │   ├── SKILL.md
+            │   └── scripts/lc.js
+            └── lc-start-work/
                 ├── SKILL.md
                 └── scripts/lc.js
 ```
