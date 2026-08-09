@@ -3,17 +3,18 @@ name: lc-orchestrate-agents
 description: >-
   Set up a recurring LocalCortex multi-agent orchestrator — the macOS task
   manager app — that polls a named Effort every 5 minutes and, for each
-  configured agent that has an open task, spawns that agent's CLI (zcode or kimi)
-  headless to do the work. At setup the user names one or more agents, each with
-  its own model and thinking effort, plus a working directory. Each tick checks
-  every configured agent in parallel and spawns one worker per agent that has an
-  open task. The spawned worker runs the lc-start-work skill, which finds, claims,
-  works, and completes the task itself. Drives LocalCortex through its
-  JXA/AppleScript surface (osascript), not MCP. Use for scheduled multi-agent
-  delegation — e.g. "orchestrate kimi (K3, high) and zcode (glm-5.2) on Build".
+  configured agent that has an open task, spawns that agent's CLI (opencode,
+  kimi, or zcode) headless to do the work. At setup the user names one or more
+  agents, each with its own model and thinking effort, plus a working directory.
+  Each tick checks every configured agent in parallel and spawns one worker per
+  agent that has an open task. The spawned worker runs the lc-start-work skill,
+  which finds, claims, works, and completes the task itself. Drives LocalCortex
+  through its JXA/AppleScript surface (osascript), not MCP. Use for scheduled
+  multi-agent delegation — e.g. "orchestrate kimi (K3, high) and zcode (glm-5.2)
+  on Build".
 argument-hint: "[effort name]"
 allowed-tools: [Bash, Read]
-version: 0.1.13
+version: 0.1.14
 license: MIT
 ---
 
@@ -49,11 +50,12 @@ The headless CLIs do **not** expose model and thinking-effort selection equally:
 
 | agent type | model (headless) | thinking effort (headless) |
 |---|---|---|
+| **opencode** | ✅ `-m <provider/model>` (e.g. `zhipuai-coding-plan/glm-5.2`) | ✅ `--variant <effort>` (provider-specific reasoning effort, e.g. `low`, `medium`, `high`, `max`, `minimal`) |
 | **kimi** | ✅ `-m <alias>` (e.g. `kimi-code/k3`) | ✅ env `KIMI_MODEL_THINKING_EFFORT=<low\|medium\|high\|max>` |
 | **zcode** | ❌ no flag — model is TUI-only (`/model`), persisted to `~/.zcode/v2/setting.json` | ❌ no flag, no env, no config key |
 
-So a per-agent model + thinking-effort setting is **applied to kimi only**. For
-**zcode**, any model/effort the user gives is **recorded but cannot be honored
+So a per-agent model + thinking-effort setting is **applied to opencode and kimi**.
+For **zcode**, any model/effort the user gives is **recorded but cannot be honored
 headless** — at setup you must warn the user that zcode will run at whatever
 model its TUI currently has selected, and that thinking effort has no headless
 mechanism at all. Still spawn zcode; just don't pretend the setting took effect.
@@ -108,10 +110,15 @@ This skill does **two things**:
   until they delete it.
 - **The spawned worker CLIs are installed and logged in.** Workers run headless,
   so they cannot prompt for login mid-run. Each supported agent has its own
-  one-time login: `zcode login`, `kimi login`. Tell the user to run the relevant
-  logins once before relying on this automation.
+  one-time login: `zcode login`, `kimi login`, `opencode auth login`. Tell the
+  user to run the relevant logins once before relying on this automation.
 - **The `lc-start-work` skill is installed** for every spawned agent (in that
   agent's plugin cache). The delegation prompt assumes the worker can load it.
+- **For opencode**, models are referenced as `<provider>/<model>` (e.g.
+  `zhipuai-coding-plan/glm-5.2`). Confirm the model the user names actually
+  appears in `opencode models` before scheduling (a typo'd model fails every
+  opencode tick). The model must be usable under the user's configured provider
+  credentials (`~/.config/opencode/opencode.json`).
 - **For kimi**, model aliases live in `~/.kimi-code/config.toml` (e.g.
   `kimi-code/k3`, `kimi-code/kimi-for-coding`, `kimi-code/k3-256k`). Confirm the
   alias the user names actually exists there before scheduling.
@@ -126,6 +133,7 @@ is unsupported.
 
 | type | spawn command (headless) |
 |---|---|
+| `opencode` | `opencode run --dir "<CWD>" -m <model> --variant <effort> --auto "<worker prompt>"` (model via `-m <provider/model>`; thinking effort via `--variant`; `--auto` auto-approves tool calls so the run is non-interactive; `--dir` sets the cwd) |
 | `kimi` | `cd "<CWD>" && KIMI_MODEL_THINKING_EFFORT=<effort> kimi -m <model> -p "<worker prompt>"` (model via `-m`; thinking effort via the env var; `-p` prompt mode is already non-interactive and auto-approves tool calls — do **not** add `-y`/`--yolo` or `--auto`, they are incompatible with `-p` on kimi ≥ 0.34.0) |
 | `zcode` | `ELECTRON_RUN_AS_NODE=1 NODE_PATH="/Applications/ZCode.app/Contents/Resources/app.asar" "/Applications/ZCode.app/Contents/MacOS/ZCode" "/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs" --prompt "<worker prompt>" --cwd "<CWD>" --mode yolo` (Electron-as-Node bundle; **model and thinking effort have no headless flag** — see [Model & thinking-effort support](#model--thinking-effort-support-read-this-first)) |
 
@@ -171,7 +179,7 @@ two this skill needs.
 | `tasks-by-agent` | `<effortId>` | `LC_AGENT_LABEL` (req), `LC_INCLUDE_COMPLETED=true`, `LC_INCLUDE_ARCHIVED=true` | JSON `{ query, count, tasks }` object |
 
 - Statuses: `open`, `in_progress`, `blocked`, `completed`.
-- Workers: `none`, `human`, `agent` (+ `worker_label`, e.g. `zcode`, `kimi`).
+- Workers: `none`, `human`, `agent` (+ `worker_label`, e.g. `opencode`, `zcode`, `kimi`).
 - `effort-by-name` matches the effort's own `name` case-insensitively, exact
   first then substring; `match` is `null` on zero or ambiguous matches.
 - `tasks-by-agent` returns tasks whose `worker` is `"agent"` **and** whose
@@ -213,13 +221,14 @@ Ask the user for three things. **Do not invent any of them.**
 
    | field | required? | notes |
    |---|---|---|
-   | `label` | **yes** | the agent's `worker_label` — `kimi` or `zcode`. Not the literal string "agent". |
-   | `model` | optional | kimi: a `~/.kimi-code/config.toml` alias, e.g. `kimi-code/k3`. zcode: **ignored headless** (see warning below). |
-   | `effort` | optional | one of `low`, `medium`, `high`, `max`. kimi: applied via `KIMI_MODEL_THINKING_EFFORT`. zcode: **ignored headless**. |
+   | `label` | **yes** | the agent's `worker_label` — `opencode`, `kimi`, or `zcode`. Not the literal string "agent". |
+   | `model` | optional | opencode: a `<provider>/<model>` from `opencode models`, e.g. `zhipuai-coding-plan/glm-5.2`. kimi: a `~/.kimi-code/config.toml` alias, e.g. `kimi-code/k3`. zcode: **ignored headless** (see warning below). |
+   | `effort` | optional | thinking effort. opencode: applied via `--variant` (provider-specific reasoning effort, e.g. `low`, `medium`, `high`, `max`, `minimal`). kimi: one of `low`, `medium`, `high`, `max`, applied via `KIMI_MODEL_THINKING_EFFORT`. zcode: **ignored headless**. |
 
-   Example the user might give: *"kimi with K3 at high effort, and zcode with
-   glm-5.2 at the highest effort."* That yields two specs:
-   `{label: kimi, model: kimi-code/k3, effort: high}` and
+   Example the user might give: *"opencode with glm-5.2 at high effort, kimi with
+   K3 at high effort, and zcode with glm-5.2 at the highest effort."* That yields
+   three specs: `{label: opencode, model: zhipuai-coding-plan/glm-5.2, effort: high}`,
+   `{label: kimi, model: kimi-code/k3, effort: high}`, and
    `{label: zcode, model: glm-5.2, effort: max}`.
 
 3. **CWD** — the absolute working directory the spawned workers run in. Default
@@ -261,14 +270,26 @@ it, **tell them explicitly**:
 > model you named (`<model>`) and effort (`<effort>`) will be **recorded in the
 > automation but cannot be applied** when zcode is spawned. zcode runs at
 > whatever model its TUI currently has selected (set it with `/model` in the
-> zcode TUI first). kimi specs are unaffected.
+> zcode TUI first). opencode and kimi specs are unaffected.
 
 Still proceed — zcode is spawned; only its model/effort settings are inert.
 
-### Step 4 — Confirm kimi model aliases (if any kimi spec has a model)
+### Step 4 — Confirm model references (if any spec names a model)
 
-For each kimi spec that names a model, confirm the alias exists before
-scheduling (a typo'd alias fails every kimi tick):
+For each spec that names a model, confirm the model reference is valid before
+scheduling (a typo'd model fails every tick for that agent):
+
+**For opencode** — the model must appear in `opencode models`:
+
+```bash
+opencode models | grep -F '<provider/model>'
+```
+
+No match → tell the user the model is unknown and ask them to pick one from
+`opencode models` (or omit the model to use the `model` configured in
+`~/.config/opencode/opencode.json`).
+
+**For kimi** — the alias must exist in `~/.kimi-code/config.toml`:
 
 ```bash
 grep -n '<model alias>' ~/.kimi-code/config.toml
@@ -289,7 +310,7 @@ flow, because the run is headless and has no access to this conversation.
 - `cron`: `"*/5 * * * *"`
 - `title`: a concise title that records the schedule, the effort, and **all
   agent types**, e.g.
-  `lc-orchestrate-agents: poll <effort name> every 5 min for kimi, zcode`
+  `lc-orchestrate-agents: poll <effort name> every 5 min for opencode, kimi, zcode`
 - `prompt`: the **exact** prompt block from
   [Scheduled run](#the-scheduled-run-each-tick-headless) below, with
   `<EFFORT_NAME>`, `<CWD>`, and the **agent-specs table** filled in with the
@@ -313,7 +334,8 @@ already run — report its outcome (which workers were spawned, or that no agent
 had an open task). **Tell the user how to stop it:** the automation persists
 until deleted; they can list automations (`CronList`) and delete the job by id
 (`CronDelete`), or ask you to stop it. Also remind them the spawned worker CLIs
-must stay logged in (`zcode login` / `kimi login`) for ticks to do real work.
+must stay logged in (`opencode auth login` / `zcode login` / `kimi login`) for
+ticks to do real work.
 
 ---
 
@@ -340,7 +362,7 @@ configured labels.
 
 | label | model | effort | spawn command |
 |---|---|---|---|
-| `<AGENT_LABEL_1>` | `<model or none>` | `<effort or none>` | `<the exact spawn command for this type, with model/effort applied for kimi; for zcode, model/effort omitted with a comment that they are inert>` |
+| `<AGENT_LABEL_1>` | `<model or none>` | `<effort or none>` | `<the exact spawn command for this type, with model/effort applied for opencode and kimi; for zcode, model/effort omitted with a comment that they are inert>` |
 | `<AGENT_LABEL_2>` | … | … | … |
 
 ### Helper
@@ -398,6 +420,14 @@ code. One task per agent per tick — each worker's `lc-start-work` handles the
 claim/work/complete; do not spawn a second worker for the same agent in the same
 tick even if it has multiple open tasks.
 
+**If the agent type is `opencode`** — model via `-m <provider/model>` (omit if
+model is `none`), thinking effort via `--variant` (omit if effort is `none`),
+`--auto` to auto-approve tool calls, `--dir` for the cwd:
+
+```bash
+opencode run --dir "<CWD>" -m <model> --variant <effort> --auto "<worker prompt for this agent>"
+```
+
 **If the agent type is `kimi`** — model via `-m` (omit if model is `none`),
 thinking effort via `KIMI_MODEL_THINKING_EFFORT` (omit if effort is `none`),
 `-p` prompt mode (no `-y`):
@@ -417,9 +447,12 @@ ELECTRON_RUN_AS_NODE=1 \
   --prompt "<worker prompt for this agent>" --cwd "<CWD>" --mode yolo
 ```
 
-**Parallel pattern** (example for two agents):
+**Parallel pattern** (example for three agents):
 
 ```bash
+# opencode worker
+( opencode run --dir "<CWD>" -m <model> --variant <effort> --auto "<opencode prompt>" ) &
+OPENCODE_PID=$!
 # kimi worker
 ( cd "<CWD>" && KIMI_MODEL_THINKING_EFFORT=<effort> kimi -m <model> -p "<kimi prompt>" ) &
 KIMI_PID=$!
@@ -429,7 +462,7 @@ KIMI_PID=$!
     "/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs" \
     --prompt "<zcode prompt>" --cwd "<CWD>" --mode yolo ) &
 ZCODE_PID=$!
-wait "$KIMI_PID" "$ZCODE_PID"
+wait "$OPENCODE_PID" "$KIMI_PID" "$ZCODE_PID"
 # report each exit code
 ```
 
@@ -445,7 +478,8 @@ Report each worker's pass/fail by its exit code:
 
 If a spawn command itself is rejected (e.g. an unknown flag on a different
 build), check that worker CLI's `--help` for the exact headless flags on that
-version before the next tick — zcode/kimi flag names can vary across builds.
+version before the next tick — opencode/kimi/zcode flag names can vary across
+builds.
 
 ### 5. One task per agent per tick
 
@@ -475,11 +509,11 @@ Use the lc-start-work skill to do one task's worth of work on the '<EFFORT_NAME>
   The 5-minute cadence bounds throughput deliberately.
 - **Login is a prerequisite, not a tick concern.** If a spawn fails because a
   worker isn't logged in, the tick can't fix it; surface it in the tick's output
-  and stop that worker. The user must run `zcode login` / `kimi login`
-  separately.
+  and stop that worker. The user must run `opencode auth login` / `zcode login`
+  / `kimi login` separately.
 - **zcode model/effort are inert.** Even if the specs table records a
   model/effort for a zcode agent, the zcode spawn command cannot apply them —
-  do not invent flags. kimi specs are applied as documented.
+  do not invent flags. opencode and kimi specs are applied as documented.
 
 ---
 
