@@ -16,6 +16,7 @@ than the opt-in MCP server.
 | [`codex-plugin`](codex-plugin) | Codex | A local marketplace + the `localcortex` plugin (skill: `start-work`). |
 | [`zcode-plugin`](zcode-plugin) | ZCode | A local marketplace + the `localcortex` plugin (skill: `start-work` / `/start-work`). |
 | [`kimi-plugin`](kimi-plugin) | Kimi Code | A local marketplace + the `localcortex` plugin (skill: `start-work` / `/skill:start-work`). |
+| [`opencode-skill`](opencode-skill) | OpenCode | A `skills/` tree installable via the [`skills`](https://www.npmjs.com/package/skills) CLI (skills: `lc-fetch-effort`, `lc-fetch-agent-task`, `lc-complete-task`, `lc-start-work`, `lc-start-job`). |
 
 (More ecosystems may be added as sibling folders later.)
 
@@ -76,10 +77,19 @@ LocalCortex---Plugins/
                 └── start-work/
                     ├── SKILL.md
                     └── scripts/lc.js   # same JXA helper
+└── opencode-skill/                # OpenCode distribution (no plugin system)
+    ├── README.md
+    └── skills/                    # `skills` CLI container dir
+        ├── lc-fetch-effort/         { SKILL.md, scripts/lc.js }
+        ├── lc-fetch-agent-task/     { SKILL.md, scripts/lc.js }
+        ├── lc-complete-task/        { SKILL.md, scripts/lc.js }
+        ├── lc-start-work/           { SKILL.md, scripts/lc.js }
+        └── lc-start-job/            { SKILL.md, scripts/lc.js }  # launchd job
 ```
 
 See each distribution's README for ecosystem-specific install instructions:
 [`claude-plugin`](claude-plugin/README.md),
 [`codex-plugin`](codex-plugin/README.md),
-[`zcode-plugin`](zcode-plugin/README.md), and
-[`kimi-plugin`](kimi-plugin/README.md).
+[`zcode-plugin`](zcode-plugin/README.md),
+[`kimi-plugin`](kimi-plugin/README.md), and
+[`opencode-skill`](opencode-skill/README.md).
