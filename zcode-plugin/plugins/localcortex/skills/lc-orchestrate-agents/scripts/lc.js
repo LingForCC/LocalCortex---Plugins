@@ -144,10 +144,44 @@ function run() {
       });
       break;
     }
+    case "tasks-list": {
+      // Raw listTasks — every task in the effort, any status (completed
+      // tasks included; only archived is filterable). Used by the tick to
+      // scan for an already-created reminder task (dedup) and to inspect
+      // parent_id across all processed agent tasks when picking the
+      // reminder's parent. tasks-by-agent filters to active agent tasks
+      // only, so it cannot see completed reminders — that's why this raw
+      // view exists alongside it.
+      const effortId = positional[0];
+      if (!effortId) throw new Error("usage: lc.js tasks-list <effortId>");
+      result = app.listTasks(effortId, {
+        includeArchived: envOpt("LC_INCLUDE_ARCHIVED") === "true",
+      });
+      break;
+    }
     case "tasks-get": {
       const taskId = positional[0];
       if (!taskId) throw new Error("usage: lc.js tasks-get <taskId>");
       result = app.getTask(taskId);
+      break;
+    }
+    case "task-create": {
+      // createTask sdef has in-effort / with-name (both required) and
+      // optional notes / due-date / parent / recurrence. There is NO worker
+      // param on create — a new task defaults to worker=none, so a reminder
+      // created here is never picked up by any configured agent. Omit parent
+      // entirely when LC_PARENT_ID is unset so a ROOT task is created rather
+      // than a child of an empty/null id.
+      const effortId = positional[0];
+      if (!effortId) throw new Error("usage: lc.js task-create <effortId>");
+      const name = envStr("LC_NAME");
+      if (!name) throw new Error("LC_NAME is required for task-create");
+      const opts = { inEffort: effortId, withName: name };
+      const notes = envOpt("LC_NOTES");
+      if (notes !== undefined) opts.notes = notes;
+      const parent = envOpt("LC_PARENT_ID");
+      if (parent !== undefined) opts.parent = parent;
+      result = app.createTask(opts);
       break;
     }
     case "task-update": {
@@ -187,8 +221,8 @@ function run() {
     default:
       throw new Error(
         "unknown subcommand: '" + cmd + "'. Expected one of: " +
-          "effort-by-name, tasks-by-agent, tasks-get, task-update, " +
-          "workspace-path, task-complete."
+          "effort-by-name, tasks-by-agent, tasks-list, tasks-get, " +
+          "task-create, task-update, workspace-path, task-complete."
       );
   }
 

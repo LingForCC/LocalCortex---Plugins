@@ -14,7 +14,7 @@ description: >-
   on Build".
 argument-hint: "[effort name]"
 allowed-tools: [Bash, Read]
-version: 0.1.14
+version: 0.1.15
 license: MIT
 ---
 
@@ -170,13 +170,15 @@ osascript -l JavaScript "$LC_JS" <subcommand> [positional args]
 
 The helper prints the app's JSON-string result to stdout — `JSON.parse` it (or
 read the JSON directly). `effort-by-name` and `tasks-by-agent` are client-side
-composites (the app has no name/worker-search of its own); they are the only
-two this skill needs.
+composites (the app has no name/worker-search of its own); the rest map 1:1 to
+sdef commands.
 
 | subcommand | argv | env vars | returns |
 |---|---|---|---|
 | `effort-by-name` | — | `LC_NAME` (req), `LC_INCLUDE_ARCHIVED=true` | JSON `{ query, match, candidates }` object |
 | `tasks-by-agent` | `<effortId>` | `LC_AGENT_LABEL` (req), `LC_INCLUDE_COMPLETED=true`, `LC_INCLUDE_ARCHIVED=true` | JSON `{ query, count, tasks }` object |
+| `tasks-list` | `<effortId>` | `LC_INCLUDE_ARCHIVED=true` | JSON array of **every** task summary in the effort (all statuses; completed included) |
+| `task-create` | `<effortId>` | `LC_NAME` (req), `LC_NOTES`, `LC_PARENT_ID` | JSON created task record |
 
 - Statuses: `open`, `in_progress`, `blocked`, `completed`.
 - Workers: `none`, `human`, `agent` (+ `worker_label`, e.g. `opencode`, `zcode`, `kimi`).
@@ -185,6 +187,17 @@ two this skill needs.
 - `tasks-by-agent` returns tasks whose `worker` is `"agent"` **and** whose
   `worker_label` matches the query case-insensitively; by default only
   **active** tasks (`open`, `in_progress`, `blocked`) are returned.
+- `tasks-list` is the **raw** `list tasks` view: every task in the effort
+  regardless of status or worker (completed tasks included; only archived is
+  filterable via `LC_INCLUDE_ARCHIVED`). Use it when you must see completed
+  tasks — e.g. to detect an already-created reminder (the tick's dedup scan) or
+  to read `parent_id` across processed agent tasks. `tasks-by-agent` cannot see
+  completed tasks, so it is not enough for those two jobs.
+- `task-create` maps to the app's `create task` command. That command has **no
+  `worker` parameter** — a newly created task defaults to `worker: none`, so a
+  task created here is **never picked up by any configured agent** (the tick
+  relies on this for its idle-reminder task). Omit `LC_PARENT_ID` entirely to
+  create a root task; set it to a UUID to create a subtask under that parent.
 - On this surface, **nil optional fields are explicit JSON `null`**. `status`,
   `worker`, `worker_label`, `is_archived` are always present.
 
@@ -322,20 +335,26 @@ Do not wait ~5 minutes for the automation's first fire. Right after creating
 it, run one tick now, in this session: follow the
 [Scheduled run](#the-scheduled-run-each-tick-headless) flow below exactly as
 the automation prompt will, with the validated values filled in. If no agent has
-an open task, the tick does nothing — that is fine; the recurring automation
-will pick up future tasks.
+an open task, the tick either does nothing (some agent still has an
+`in_progress` / `blocked` task) or, if no agent has any active task at all,
+creates the idle-reminder task (step 3 Branch B) — both are fine; the recurring
+automation will pick up future tasks.
 
 ### Step 7 — Report and tell the user how to stop it
 
 Report plainly: the effort (name + id), the **list of agent specs** (each
 type + model + effort, noting any zcode setting that won't be applied), the cwd,
 that the automation is recurring every 5 minutes, and that the first tick has
-already run — report its outcome (which workers were spawned, or that no agent
-had an open task). **Tell the user how to stop it:** the automation persists
-until deleted; they can list automations (`CronList`) and delete the job by id
-(`CronDelete`), or ask you to stop it. Also remind them the spawned worker CLIs
-must stay logged in (`opencode auth login` / `zcode login` / `kimi login`) for
-ticks to do real work.
+already run — report its outcome (which workers were spawned, or that the effort
+was idle). **Tell the user how to stop it:** the automation persists until
+deleted; they can list automations (`CronList`) and delete the job by id
+(`CronDelete`), or ask you to stop it. Also tell them: **when every configured
+agent has finished all its active work (no `open` / `in_progress` / `blocked`
+tasks left for any of them), the tick will create one reminder task in the same
+effort telling them to delete the automation — completing that reminder does
+NOT stop the automation, they must still `CronList` + `CronDelete` it.** Also
+remind them the spawned worker CLIs must stay logged in (`opencode auth login`
+/ `zcode login` / `kimi login`) for ticks to do real work.
 
 ---
 
@@ -345,18 +364,20 @@ ticks to do real work.
 > block into the automation's `prompt`. **Keep it self-contained** — a headless
 > run cannot ask the user anything mid-tick, and must not chain to sibling
 > skills (it *spawns* workers that run `lc-start-work`; it does not load that
-> skill itself). If no configured agent has an open task, the tick does nothing
-> and exits.
+> skill itself). If no configured agent has any active task, the tick creates a
+> single reminder task (see step 3 Branch B) and exits; it cannot stop itself.
 
 You are a LocalCortex multi-agent delegation orchestrator. Poll the Effort
-**`<EFFORT_NAME>`** for **open** tasks assigned to each of the agents listed
-below. For **each** agent that has an `open` task, spawn that agent's CLI
-headless (from the working directory **`<CWD>`**) with a one-line prompt telling
-it to run the `lc-start-work` skill on this effort for that agent. Spawn all
-such workers **in parallel**, then wait for all of them. If an agent has no open
-task, do not spawn it. Work **only one task per agent per tick**. Never touch a
-task whose `worker` is not `agent` or whose `worker_label` is not one of the
-configured labels.
+**`<EFFORT_NAME>`** for tasks assigned to each of the agents listed below. For
+**each** agent that has an `open` task, spawn that agent's CLI headless (from
+the working directory **`<CWD>`**) with a one-line prompt telling it to run the
+`lc-start-work` skill on this effort for that agent. Spawn all such workers **in
+parallel**, then wait for all of them. If an agent has no open task, do not
+spawn it. If **no** agent has any active task (`open` / `in_progress` /
+`blocked`), instead create one reminder task telling the user to stop the
+automation (step 3 Branch B) — the automation cannot delete itself. Work **only
+one task per agent per tick**. Never touch a task whose `worker` is not `agent`
+or whose `worker_label` is not one of the configured labels.
 
 **Agent specs for this run** (filled in at setup):
 
@@ -391,7 +412,7 @@ LC_NAME='<EFFORT_NAME>' osascript -l JavaScript "$LC_JS" effort-by-name
   this tick. **Stop.** Do not spawn anything. (This should not happen after a
   validated setup, but a renamed/deleted effort must not crash the tick.)
 
-### 2. For each configured agent, check for an open task
+### 2. For each configured agent, check for an open task; also fetch the raw task list
 
 Run `tasks-by-agent` **once per agent spec**, using that agent's `worker_label`:
 
@@ -401,22 +422,114 @@ LC_AGENT_LABEL='<AGENT_LABEL>' \
 ```
 
 Each call returns `{ query, count, tasks }` of that agent's **active** tasks.
-An agent **has work this tick** iff at least one of its tasks has
-`status == "open"` (sort by `order`, then `created_at`). Record the set of
-agents that have an open task. Do not touch tasks another worker already started
-(`in_progress`); they are not yours.
+For each agent, record:
 
-### 3. If no agent has an open task, stop
+- whether it **has an `open` task** (an agent has work this tick iff at least one
+  of its tasks has `status == "open"`; sort candidates by `order`, then
+  `created_at`) — this drives step 3 Branch A;
+- whether it has **any active task at all** (`open` / `in_progress` / `blocked`)
+  — this drives the terminal-state test in step 3 Branch B.
 
-If the set of agents with an open task is empty, **there is nothing to do this
-tick; stop here.**
+Do not touch tasks another worker already started (`in_progress`); they are not
+yours.
+
+Then, **once for the whole tick**, fetch the raw task list for the effort:
+
+```bash
+osascript -l JavaScript "$LC_JS" tasks-list '<EFFORT_ID>'
+```
+
+This returns **every** task in the effort, any status, any worker (completed
+included). Keep it for step 3 Branch B's dedup scan and parent-pick. (You do not
+need it in Branch A.)
+
+### 3. Decide: spawn workers, or handle the terminal state
+
+Look at the per-agent results from step 2 and pick **one** branch.
+
+#### Branch A — at least one agent has an `open` task → spawn
+
+If any configured agent has an `open` task, proceed to **step 4** and spawn one
+worker per such agent (the existing spawn flow). **Do not create a reminder
+task.** The effort is not done.
+
+#### Branch B — no agent has any active task → terminal state
+
+If **no** configured agent has any active task (`open` / `in_progress` /
+`blocked`), the effort is idle. The automation **cannot delete or disable
+itself** — a scheduled run is blocked from `CronCreate` / `CronUpdate` /
+`CronDelete` by the host (only `CronList` is allowed). So instead, create
+**one** reminder task in this effort telling the user to stop the automation.
+Skip step 4 entirely (do not spawn any worker this tick).
+
+1. **Dedup — do not create a duplicate reminder.** Using the raw task list from
+   step 2, scan **every** task (open **and** completed — the reminder may
+   already have been completed/dismissed by the user) for one whose `name`
+   contains the sentinel (case-insensitive):
+
+   ```
+   [automation] all agents idle
+   ```
+
+   If any task matches, **a reminder already exists; stop here. Do not create
+   another.** (The sentinel is deliberately fixed and effort-agnostic so every
+   tick computes the same match.)
+
+2. **Pick the reminder's parent.** Look at the processed agent tasks in the raw
+   list — the tasks whose `worker` is `agent` **and** whose `worker_label` is
+   one of the configured labels (regardless of status):
+
+   - If they **all share the same non-null `parent_id`** → create the reminder
+     **under that parent** (set `LC_PARENT_ID` to it).
+   - Otherwise (they span multiple parents, or are all roots, or there are
+     none) → create the reminder as a **root** task in the effort (**omit
+     `LC_PARENT_ID` entirely**).
+
+3. **Create the reminder** via `task-create`, with the fixed sentinel name and
+   the notes below. Pass the notes via `LC_NOTES` (multi-line is fine):
+
+   ```bash
+   LC_NAME='[automation] All agents idle — stop the <EFFORT_NAME> orchestrator' \
+   LC_NOTES='<see reminder notes template below>' \
+   [LC_PARENT_ID='<shared parent id or omit>'] \
+     osascript -l JavaScript "$LC_JS" task-create '<EFFORT_ID>'
+   ```
+
+   The created task defaults to `worker: none` (the `create task` command has no
+   worker param), so **no configured agent will ever pick it up** — the reminder
+   cannot revive the loop.
+
+4. **Stop.** Do not spawn any worker this tick. Subsequent ticks will hit
+   Branch B again, fail the dedup check (the reminder now exists), and exit
+   without creating a duplicate.
+
+**Reminder notes template** (fill in `<EFFORT_NAME>` and the agent labels; keep
+the `CronList` / `CronDelete` instructions so the user knows exactly how to
+stop):
+
+```
+All configured agents (<labels, comma-separated>) have no open, in_progress, or
+blocked tasks in the '<EFFORT_NAME>' effort. The orchestrator automation is
+still running every 5 minutes and will keep firing no-op ticks until you delete
+it — a scheduled run cannot stop itself.
+
+To stop it: run CronList, find the automation titled
+"lc-orchestrate-agents: poll <EFFORT_NAME> every 5 min for <labels>", and
+delete it by id with CronDelete (or ask your assistant to stop it).
+
+Completing this reminder does NOT stop the automation — you must delete the
+automation separately.
+
+— created by lc-orchestrate-agents on <tick date/time>
+```
 
 ### 4. Spawn one worker per agent that has an open task, in parallel
 
-For **each** agent in the set, build its worker prompt and spawn it. Use the
-spawn command for that agent's type from the specs table. **Launch all of them
-concurrently** (bash `&`), then `wait` for all to finish and collect each exit
-code. One task per agent per tick — each worker's `lc-start-work` handles the
+*(Reached only from step 3 Branch A.)* For **each** agent that has an `open`
+task, build its worker prompt and spawn it. Use the spawn command for that
+agent's type from the specs table. **Launch all of them concurrently**
+(bash `&`), then `wait` for all to finish and collect each exit code. One task
+per agent per tick — each worker's `lc-start-work` handles the
 claim/work/complete; do not spawn a second worker for the same agent in the same
 tick even if it has multiple open tasks.
 
@@ -500,8 +613,16 @@ Use the lc-start-work skill to do one task's worth of work on the '<EFFORT_NAME>
 ### Notes for the run
 
 - **Headless means no questions.** The orchestrator never asks the user anything
-  mid-tick; if the effort can't be resolved or no agent has an open task, it
-  exits silently. The spawned workers are likewise told to run headless.
+  mid-tick; if the effort can't be resolved it exits silently, and if no agent
+  has any active task it creates the reminder task (step 3 Branch B) and exits.
+  The spawned workers are likewise told to run headless.
+- **At most one reminder per effort.** When the effort goes idle, the tick
+  creates exactly one reminder task (dedup'd by the `[automation] all agents
+  idle` sentinel across **all** statuses, including a reminder the user already
+  completed). Subsequent idle ticks fail the dedup check and create nothing.
+  Completing or dismissing the reminder does **not** stop the automation — the
+  user must still delete it via `CronList` + `CronDelete`. The reminder is
+  created with `worker: none`, so no configured agent will ever pick it up.
 - **Fail safe, per worker.** If a spawn fails, leave that agent's tasks as they
   are; do not complete a task on a worker's behalf. Other workers in the same
   tick are unaffected. The next tick (or a human) picks up unfinished work.
@@ -523,5 +644,9 @@ At setup, report the effort (name + id), the **list of agent specs** (each type
 + model + effort, flagging any zcode setting that won't be applied headless),
 the cwd, the schedule (every 5 minutes, recurring), the outcome of the first
 tick (already run at setup), and **how to stop it** (list with `CronList`,
-delete by id with `CronDelete`). During the scheduled run there is no user to
-report to; the tick's stdout/stderr (per worker) is all the trace there is.
+delete by id with `CronDelete`). Also mention the **idle-reminder behavior**:
+once no agent has any active task left, the tick creates a single reminder task
+in the effort (dedup'd, so only ever one) telling the user to delete the
+automation; completing that reminder does not stop the automation. During the
+scheduled run there is no user to report to; the tick's stdout/stderr (per
+worker, plus the reminder-creation result) is all the trace there is.
