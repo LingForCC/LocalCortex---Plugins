@@ -34,13 +34,21 @@ parity with its MCP tools; this plugin wraps them.
     scheduled run is self-contained and does not chain sibling skills. See
     [`plugins/localcortex/skills/lc-start-job/SKILL.md`](plugins/localcortex/skills/lc-start-job/SKILL.md).
   - **`lc-start-work`** (`/lc-start-work`) — run **one** autonomous
-    pull-work-and-complete tick on demand: find the next **open** task assigned
-    to a given agent (`worker_label`, e.g. `zcode`) in a named Effort, claim it,
+    pull-work-and-complete tick on demand: find the next **open** task assigned to
+    a given agent (`worker_label`, e.g. `zcode`) in a named Effort, claim it,
     do the work, write artifacts into the effort's workspace folder, and
     complete it — one task, then stop. This is the same flow each scheduled tick
     of `lc-start-job` runs, just invoked once with no ZCode automation created.
     See
     [`plugins/localcortex/skills/lc-start-work/SKILL.md`](plugins/localcortex/skills/lc-start-work/SKILL.md).
+  - **`lc-create-from-template`** (`/lc-create-from-template`) — populate a named
+    Effort with tasks materialized from a named task Template's prompt. Resolves
+    the effort and template by name, reads the template's free-text prompt,
+    interprets it, and creates the described tasks (roots and subtasks) in the
+    effort, then applies assignments and Blocked / blocker relationships on top
+    (status and blockers set together in one update). Does not work or complete
+    tasks; it only creates them. See
+    [`plugins/localcortex/skills/lc-create-from-template/SKILL.md`](plugins/localcortex/skills/lc-create-from-template/SKILL.md).
 
 ## Requirements
 
@@ -99,7 +107,10 @@ zcode-plugin/
             ├── lc-start-job/
             │   ├── SKILL.md
             │   └── scripts/lc.js
-            └── lc-start-work/
+            ├── lc-start-work/
+            │   ├── SKILL.md
+            │   └── scripts/lc.js
+            └── lc-create-from-template/
                 ├── SKILL.md
                 └── scripts/lc.js
 ```

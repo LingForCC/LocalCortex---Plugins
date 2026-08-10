@@ -31,6 +31,14 @@ required. The LocalCortex app exposes seven scripting commands (`list efforts`,
   effort + agent label at setup, then creates the ZCode automation; the
   scheduled run is self-contained and does not chain sibling skills. See
   [`skills/lc-start-job/SKILL.md`](skills/lc-start-job/SKILL.md).
+- **`lc-create-from-template`** (`/lc-create-from-template`) — populate a named
+  Effort with tasks materialized from a named task Template's prompt. Resolves
+  the effort and template by name, reads the template's free-text prompt,
+  interprets it, and creates the described tasks (roots and subtasks) in the
+  effort, then applies assignments and Blocked / blocker relationships on top
+  (status and blockers set together in one update). Does not work or complete
+  tasks; it only creates them. See
+  [`skills/lc-create-from-template/SKILL.md`](skills/lc-create-from-template/SKILL.md).
 
 ## Requirements
 
