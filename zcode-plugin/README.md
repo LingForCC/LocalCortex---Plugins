@@ -15,31 +15,11 @@ parity with its MCP tools; this plugin wraps them.
     Read-only (no task access); resolves exact-then-substring,
     case-insensitive, and asks for disambiguation on several matches. See
     [`plugins/localcortex/skills/lc-fetch-effort/SKILL.md`](plugins/localcortex/skills/lc-fetch-effort/SKILL.md).
-  - **`lc-fetch-agent-task`** (`/lc-fetch-agent-task`) — find the active tasks
-    assigned to a specific agent (`worker_label`, e.g. `zcode`) inside a given
-    Effort. Read-only; matches `worker: agent` + label case-insensitively, and
-    never modifies tasks. See
-    [`plugins/localcortex/skills/lc-fetch-agent-task/SKILL.md`](plugins/localcortex/skills/lc-fetch-agent-task/SKILL.md).
-  - **`lc-complete-task`** (`/lc-complete-task`) — complete (default) or reopen a
-    LocalCortex task by id. Completing also completes the subtask subtree,
-    auto-unblocks tasks waiting on it, and spawns a fresh open copy if the task
-    carries a recurrence rule. Only the completion transition lives here; it
-    does not create, rename, re-date, or delete tasks. See
-    [`plugins/localcortex/skills/lc-complete-task/SKILL.md`](plugins/localcortex/skills/lc-complete-task/SKILL.md).
-  - **`lc-start-job`** (`/lc-start-job`) — set up a recurring autonomous worker
-    that, every 5 minutes, polls a named Effort for an **open** task assigned to
-    a given agent (`worker_label`, e.g. `zcode`), does that task's work, writes
-    artifacts into the effort's workspace folder, and completes it. Validates
-    the effort + agent label at setup, then creates the ZCode automation; the
-    scheduled run is self-contained and does not chain sibling skills. See
-    [`plugins/localcortex/skills/lc-start-job/SKILL.md`](plugins/localcortex/skills/lc-start-job/SKILL.md).
   - **`lc-start-work`** (`/lc-start-work`) — run **one** autonomous
     pull-work-and-complete tick on demand: find the next **open** task assigned to
     a given agent (`worker_label`, e.g. `zcode`) in a named Effort, claim it,
     do the work, write artifacts into the effort's workspace folder, and
-    complete it — one task, then stop. This is the same flow each scheduled tick
-    of `lc-start-job` runs, just invoked once with no ZCode automation created.
-    See
+    complete it — one task, then stop. See
     [`plugins/localcortex/skills/lc-start-work/SKILL.md`](plugins/localcortex/skills/lc-start-work/SKILL.md).
   - **`lc-create-from-template`** (`/lc-create-from-template`) — populate a named
     Effort with tasks materialized from a named task Template's prompt. Resolves
@@ -96,15 +76,6 @@ zcode-plugin/
         ├── README.md
         └── skills/
             ├── lc-fetch-effort/
-            │   ├── SKILL.md
-            │   └── scripts/lc.js
-            ├── lc-fetch-agent-task/
-            │   ├── SKILL.md
-            │   └── scripts/lc.js
-            ├── lc-complete-task/
-            │   ├── SKILL.md
-            │   └── scripts/lc.js
-            ├── lc-start-job/
             │   ├── SKILL.md
             │   └── scripts/lc.js
             ├── lc-start-work/
