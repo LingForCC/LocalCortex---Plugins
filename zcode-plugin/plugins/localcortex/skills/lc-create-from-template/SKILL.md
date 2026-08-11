@@ -15,7 +15,7 @@ description: >-
   Launch". Does not work or complete tasks; it only creates them.
 argument-hint: "[effort name] [template name]"
 allowed-tools: [Bash, Read]
-version: 0.1.1
+version: 0.1.2
 license: MIT
 ---
 
@@ -211,7 +211,6 @@ For each task the prompt describes, create it:
 
 ```bash
 LC_NAME='<task name>' \
-LC_NOTES='<notes / the relevant slice of the prompt>' \
 [LC_PARENT_ID='<parent task id>' LC_DUE_DATE='2030-01-15T09:00:00Z'] \
   osascript -l JavaScript "$LC_JS" task-create "$EFFORT_ID"
 ```
@@ -219,9 +218,12 @@ LC_NOTES='<notes / the relevant slice of the prompt>' \
 - Create **roots first**, then their **subtasks** — a subtask's `LC_PARENT_ID`
   must be an id you already created (or an existing task id in the same
   effort). Capture every returned `id`.
-- Use `LC_NOTES` to carry the instructions for that task — the prompt usually
-  has per-task detail; if it only has a single body, put a concise version on
-  each task (or on the roots) so the work is self-describing later.
+- **Do not add notes unless the prompt asks for them.** By default create tasks
+  with no `LC_NOTES` at all — leave notes empty. Only set `LC_NOTES` when the
+  template's prompt explicitly contains notes / instructions / detail meant to
+  be attached to that task; in that case copy the relevant slice verbatim. Do
+  **not** invent notes, summarize the prompt, or "record your interpretation"
+  on a task — the work is not self-describing through notes here.
 - `due date` is optional ISO-8601 (`2030-01-15T09:00:00Z`); omit when the
   prompt doesn't date the task. A subtask with no due date inherits its
   parent's.
@@ -257,8 +259,9 @@ LC_STATUS=blocked LC_BLOCKERS='<blockerTaskId1>,<blockerTaskId2>' \
 - No self-blocking, no cycles (the app validates both).
 - To **clear** blockers and revert a Blocked task to open, send
   `LC_CLEAR_BLOCKERS=true` (with no `LC_BLOCKERS`).
-- You can also set `name` / `notes` / `due date` in the same `task-update`
-  call when it makes sense.
+- You can also set `name` / `due date` in the same `task-update` call when it
+  makes sense. Set `notes` here **only** when the prompt explicitly calls for
+  notes on that task — never add your own.
 
 ### Step 7 — Report
 
@@ -272,8 +275,9 @@ in place (do not try to roll them back).
 
 - **Make reasonable assumptions.** This is an interactive run — interpret the
   prompt, make the most reasonable shape (roots vs. subtasks, ordering,
-  assignments, which tasks block which), and **record your interpretation** in
-  the task notes. Ask only when the prompt is genuinely ambiguous.
+  assignments, which tasks block which). Ask only when the prompt is genuinely
+  ambiguous. **Do not write your interpretation into task notes** — leave notes
+  empty unless the prompt explicitly asks for notes on a task.
 - **Respect the blocker invariants.** Same-Effort only; no self-block; no
   cycles. Always send `LC_STATUS=blocked` and `LC_BLOCKERS=<ids>` in the same
   `task-update` call — never set Blocked on one call and blockers on another.
