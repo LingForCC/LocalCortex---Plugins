@@ -2,79 +2,118 @@
 name: lc-orchestrate-agents
 description: >-
   Set up a recurring LocalCortex multi-agent orchestrator — the macOS task
-  manager app — that polls a named Effort every 5 minutes and, for each
-  configured agent that has an open task, spawns that agent's CLI (opencode,
-  kimi, or zcode) headless to do the work. At setup the user names one or more
-  agents, each with its own model and thinking effort, plus a working directory.
-  Each tick checks every configured agent in parallel and spawns one worker per
-  agent that has an open task. The spawned worker runs the lc-start-work skill,
-  which finds, claims, works, and completes the task itself. Drives LocalCortex
-  through its JXA/AppleScript surface (osascript), not MCP. Use for scheduled
-  multi-agent delegation — e.g. "orchestrate kimi (K3, high) and zcode (glm-5.2)
-  on Build".
+  manager app — that polls a named Effort every 5 minutes and, for each agent
+  definition in the app that has an open task, spawns that agent's CLI
+  (opencode, kimi, or zcode) headless to do the work. The agent roster, model,
+  and thinking effort are READ FROM THE APP (its `list agents` definitions) —
+  the user never supplies them; each agent's `tool` selects the CLI, its
+  `model` is the model, its `thinking_effort` is the effort. Each tick
+  re-reads the agent list, checks every supported agent in parallel, and
+  spawns one worker per agent that has an open task. The spawned worker runs
+  the lc-start-work skill, which finds (by agent_id), claims, works, and
+  completes the task itself. Drives LocalCortex through its JXA/AppleScript
+  surface (osascript), not MCP. Use for scheduled multi-agent delegation —
+  e.g. "orchestrate all my agents on Build".
 argument-hint: "[effort name]"
 allowed-tools: [Bash, Read]
-version: 0.1.15
+version: 0.1.16
 license: MIT
 ---
 
 # lc-orchestrate-agents — a scheduled multi-agent delegation orchestrator
 
 Set up a scheduled ZCode automation that, every 5 minutes, checks a named
-**Effort** for open tasks assigned to **each of one or more configured agents**
-and — **for every agent that has an open task** — spawns that agent's CLI
-headless to do the work. The orchestrator is a **thin gatekeeper**: each tick
-runs cheap `osascript` checks for each agent, and only spawns a worker when
-there is an open task for that agent. It does **not** do the task work itself.
+**Effort** for open tasks assigned to **each supported agent defined in the
+LocalCortex app** and — **for every agent that has an open task** — spawns
+that agent's CLI headless to do the work. The orchestrator is a **thin
+gatekeeper**: each tick runs cheap `osascript` checks for each agent, and only
+spawns a worker when there is an open task for that agent. It does **not** do
+the task work itself.
 
-At setup the user provides a **list of agent specs** — each agent type they want
-spawned, optionally with its own **model** and **thinking effort** — plus a
-**working directory**. The tick then spawns, **in parallel**, one worker per
-agent that has an open task, and waits for all of them to finish.
+The **agent roster is read from the app**, not supplied by the user. At setup
+the user provides only the **Effort name** and a **working directory**; the
+skill calls the app's `list agents` command, and for each agent definition maps
+its free-text `tool` to one of the supported CLIs (opencode / kimi / zcode),
+then uses that agent's `model` and `thinking_effort` as the spawn parameters.
+Supported agents (those whose `tool` maps to a known CLI) become the roster;
+everything else is skipped and reported. **If agent info cannot be read from
+the app, or no supported agents exist, do nothing and inform the user.**
 
 Each spawned worker is handed a short prompt that tells it to run the
-**`lc-start-work`** skill, which encapsulates the entire claim → read-context →
-work → write-artifacts → complete flow (it bundles its own `lc.js`). So the
-delegation prompt is just "use `lc-start-work` on this effort for this agent";
-the worker does the rest. This is the key difference from `lc-start-job`, whose
-scheduled run does the work itself, and from the earlier single-agent version of
-this skill.
+**`lc-start-work`** skill for a specific agent **id**, which encapsulates the
+entire claim → read-context → work → write-artifacts → complete flow (it
+bundles its own `lc.js`). So the delegation prompt is just "use `lc-start-work`
+on this effort for this agent id"; the worker does the rest.
 
 Drive LocalCortex **exclusively through its JXA/AppleScript surface** via the
 bundled `lc.js` helper — never use `mcp__localcortex__*` tools in this skill's
 flow.
 
+## How agents are identified (read this first)
+
+This skill does **not** ask the user for agents, models, or efforts. It reads
+**agent definitions** from the app:
+
+- **`list agents`** returns a JSON array of agent records, each with: `id`
+  (UUID), `name`, `tool` (free text, e.g. `"opencode"`, `"kimi code"`,
+  `"codex"`), `model` (free text), `thinking_effort` (free text), `order`,
+  `created_at`, `updated_at`. Agents are created/edited in the app's Settings,
+  or over the wire via `create agent` / `update agent`. They are **global**
+  (not per-effort) and sync via CloudKit.
+- **`tool` → CLI mapping** (case-insensitive substring of the `tool` field):
+
+  | `tool` contains | spawned CLI |
+  |---|---|
+  | `opencode` | `opencode` |
+  | `kimi` | `kimi` |
+  | `zcode` | `zcode` |
+  | anything else (e.g. `codex`, `claude code`) | **unsupported — skipped** |
+
+  So `"opencode"`, `"kimi code"`, and `"ZCode"` all map correctly; `"codex"`
+  and `"claude code"` are skipped (no spawnable headless CLI is known for them
+  here).
+- **`model`** and **`thinking_effort`** are applied to opencode and kimi
+  spawns. For zcode they are recorded for reporting but **cannot be applied
+  headless** (see [Model & thinking-effort support](#model--thinking-effort-support-read-this-first)).
+
+Each agent's **tasks** are matched by **`agent_id`** (the agent record's `id`
+UUID), not by `worker_label`. As of the app's agent-worker feature, an
+agent-assigned task carries its identity in `agent_id`; `worker_label` is
+human-only and empty for agent tasks. The orchestrator and the spawned
+`lc-start-work` worker both find an agent's tasks with
+`tasks-by-agent ... LC_AGENT_ID=<id>`.
+
 ## Model & thinking-effort support (read this first)
 
-The headless CLIs do **not** expose model and thinking-effort selection equally:
+The headless CLIs do **not** expose model and thinking-effort selection equally.
+Each agent's `model` / `thinking_effort` (read from the app) is applied to
+opencode and kimi; for **zcode** they are **recorded but cannot be honored
+headless** — at setup you must warn the user that any zcode agent will run at
+whatever model its TUI currently has selected, and that thinking effort has no
+headless mechanism at all. Still spawn zcode; just don't pretend the setting
+took effect.
 
-| agent type | model (headless) | thinking effort (headless) |
+| agent type (from `tool`) | model (headless) | thinking effort (headless) |
 |---|---|---|
-| **opencode** | ✅ `-m <provider/model>` (e.g. `zhipuai-coding-plan/glm-5.2`) | ✅ `--variant <effort>` (provider-specific reasoning effort, e.g. `low`, `medium`, `high`, `max`, `minimal`) |
-| **kimi** | ✅ `-m <alias>` (e.g. `kimi-code/k3`) | ✅ env `KIMI_MODEL_THINKING_EFFORT=<low\|medium\|high\|max>` |
-| **zcode** | ❌ no flag — model is TUI-only (`/model`), persisted to `~/.zcode/v2/setting.json` | ❌ no flag, no env, no config key |
-
-So a per-agent model + thinking-effort setting is **applied to opencode and kimi**.
-For **zcode**, any model/effort the user gives is **recorded but cannot be honored
-headless** — at setup you must warn the user that zcode will run at whatever
-model its TUI currently has selected, and that thinking effort has no headless
-mechanism at all. Still spawn zcode; just don't pretend the setting took effect.
+| **opencode** | ✅ `-m <provider/model>` | ✅ `--variant <effort>` |
+| **kimi** | ✅ `-m <alias>` | ✅ env `KIMI_MODEL_THINKING_EFFORT=<low\|medium\|high\|max>` |
+| **zcode** | ❌ no flag — model is TUI-only (`/model`) | ❌ no flag, no env, no config key |
 
 ## When to use this skill
 
-When the user wants **scheduled, multi-agent delegation** — one or more agents
-running unattended on a LocalCortex Effort, polling for open work assigned to
-each, where each tick *farms the actual work out to fresh headless workers*
-rather than doing it in-process. Examples: "orchestrate kimi with K3 at high
-effort, and zcode with glm-5.2, on the Build effort", "spawn both kimi and zcode
-against Payments every 5 min", "set up a polling dispatcher for these agents …".
+When the user wants **scheduled, multi-agent delegation** — one or more
+app-defined agents running unattended on a LocalCortex Effort, polling for open
+work assigned to each, where each tick *farms the actual work out to fresh
+headless workers* rather than doing it in-process. Examples: "orchestrate all
+my agents on the Build effort", "spawn workers against Payments every 5 min",
+"set up a polling dispatcher for the agents I've configured in LocalCortex".
 
 This skill does **two things**:
 
-1. **At setup time (interactive, with the user):** collect the effort name, the
-   list of agent specs (type + optional model + optional thinking effort), and
-   the working directory; validate the effort; create the ZCode automation; then
-   run the first tick immediately in the current session.
+1. **At setup time (interactive, with the user):** collect the effort name and
+   the working directory; validate the effort; **read the agent roster from the
+   app** (`list agents`) and map each to a spawnable CLI; create the ZCode
+   automation; then run the first tick immediately in the current session.
 2. **On each tick (headless):** run the parallel gatekeeper loop described in
    [The scheduled run](#the-scheduled-run-each-tick-headless) below.
 
@@ -97,8 +136,9 @@ This skill does **two things**:
 ## Prerequisites
 
 - The **LocalCortex** macOS app is installed and built with the AppleScript/JXA
-  surface (sdef commands used here: `list efforts`, `list tasks`). Apple Events
-  auto-launch the app if it isn't running — no "is the server up" check needed.
+  surface (sdef commands used here: `list efforts`, `list tasks`, `list agents`).
+  Apple Events auto-launch the app if it isn't running — no "is the server up"
+  check needed.
 - The **first call from the ZCode host binary triggers a one-time macOS TCC
   prompt** ("*… wants to control LocalCortex*"). After the user grants it,
   subsequent calls are silent. Tell the user to expect this prompt the first
@@ -108,28 +148,32 @@ This skill does **two things**:
 - **ZCode scheduled automations** are enabled in this host. The setup step
   creates one; tell the user it will fire every 5 minutes in the background
   until they delete it.
+- **At least one supported agent is defined in the app.** Agents are created in
+  the app's Settings (or via `create agent`); each agent's `tool` must map to
+  one of the supported CLIs (opencode / kimi / zcode). If no agent is defined,
+  or none maps to a supported CLI, the skill does nothing and tells the user.
 - **The spawned worker CLIs are installed and logged in.** Workers run headless,
   so they cannot prompt for login mid-run. Each supported agent has its own
   one-time login: `zcode login`, `kimi login`, `opencode auth login`. Tell the
   user to run the relevant logins once before relying on this automation.
 - **The `lc-start-work` skill is installed** for every spawned agent (in that
   agent's plugin cache). The delegation prompt assumes the worker can load it.
-- **For opencode**, models are referenced as `<provider>/<model>` (e.g.
-  `zhipuai-coding-plan/glm-5.2`). Confirm the model the user names actually
-  appears in `opencode models` before scheduling (a typo'd model fails every
-  opencode tick). The model must be usable under the user's configured provider
-  credentials (`~/.config/opencode/opencode.json`).
-- **For kimi**, model aliases live in `~/.kimi-code/config.toml` (e.g.
-  `kimi-code/k3`, `kimi-code/kimi-for-coding`, `kimi-code/k3-256k`). Confirm the
-  alias the user names actually exists there before scheduling.
-- **For zcode**, the desired model must be **pre-selected in the TUI** (`/model`)
-  so it is persisted to `~/.zcode/v2/setting.json` — there is no headless flag.
+- **For opencode agents**, models are referenced as `<provider>/<model>` (e.g.
+  `zhipuai-coding-plan/glm-5.2`). The model comes from each agent's `model`
+  field; if a tick fails for that agent, check that the model is usable under
+  the user's provider credentials (`~/.config/opencode/opencode.json`).
+- **For kimi agents**, model aliases live in `~/.kimi-code/config.toml` (e.g.
+  `kimi-code/k3`). The model comes from each agent's `model` field; if a tick
+  fails, check the alias exists there.
+- **For zcode agents**, the desired model must be **pre-selected in the TUI**
+  (`/model`) so it is persisted to `~/.zcode/v2/setting.json` — there is no
+  headless flag, so each zcode agent's `model`/`thinking_effort` are inert.
 
 ## Supported agents
 
-Only these agent types can be delegated to (the `worker_label` tasks are
-assigned to). Anything else → **do not spawn; stop and tell the user** the type
-is unsupported.
+Only agents whose `tool` maps to one of these CLIs can be delegated to (see the
+[`tool` → CLI mapping](#how-agents-are-identified-read-this-first)). Anything
+else → **do not spawn; skip it and report why**.
 
 | type | spawn command (headless) |
 |---|---|
@@ -137,9 +181,8 @@ is unsupported.
 | `kimi` | `cd "<CWD>" && KIMI_MODEL_THINKING_EFFORT=<effort> kimi -m <model> -p "<worker prompt>"` (model via `-m`; thinking effort via the env var; `-p` prompt mode is already non-interactive and auto-approves tool calls — do **not** add `-y`/`--yolo` or `--auto`, they are incompatible with `-p` on kimi ≥ 0.34.0) |
 | `zcode` | `ELECTRON_RUN_AS_NODE=1 NODE_PATH="/Applications/ZCode.app/Contents/Resources/app.asar" "/Applications/ZCode.app/Contents/MacOS/ZCode" "/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs" --prompt "<worker prompt>" --cwd "<CWD>" --mode yolo` (Electron-as-Node bundle; **model and thinking effort have no headless flag** — see [Model & thinking-effort support](#model--thinking-effort-support-read-this-first)) |
 
-The **worker prompt** is the same one-sentence instruction for every agent type,
-parameterized by that agent's own label (see
-[Worker prompt](#worker-prompt)).
+The **worker prompt** is the same one-sentence instruction for every agent,
+parameterized by **that agent's id and name** (see [Worker prompt](#worker-prompt)).
 
 ## Helper setup (do this once, up front)
 
@@ -159,8 +202,9 @@ fi
 ```
 
 Every command below is invoked the same way. **Always pass free text (effort
-name, agent label) via env vars**, never inline in argv — env vars are safe for
-quotes, newlines, backticks, and `$`. UUIDs and the subcommand go in argv.
+name, agent label, notes) via env vars**, never inline in argv — env vars are
+safe for quotes, newlines, backticks, and `$`. UUIDs (agent ids, effort ids)
+and the subcommand go in argv.
 
 ```bash
 osascript -l JavaScript "$LC_JS" <subcommand> [positional args]
@@ -170,23 +214,33 @@ osascript -l JavaScript "$LC_JS" <subcommand> [positional args]
 
 The helper prints the app's JSON-string result to stdout — `JSON.parse` it (or
 read the JSON directly). `effort-by-name` and `tasks-by-agent` are client-side
-composites (the app has no name/worker-search of its own); the rest map 1:1 to
-sdef commands.
+composites (the app has no name/worker-search of its own); `agents-list`,
+`tasks-list`, `tasks-get`, `task-create`, `task-update`, `task-complete`,
+`workspace-path` map 1:1 to sdef commands.
 
 | subcommand | argv | env vars | returns |
 |---|---|---|---|
 | `effort-by-name` | — | `LC_NAME` (req), `LC_INCLUDE_ARCHIVED=true` | JSON `{ query, match, candidates }` object |
-| `tasks-by-agent` | `<effortId>` | `LC_AGENT_LABEL` (req), `LC_INCLUDE_COMPLETED=true`, `LC_INCLUDE_ARCHIVED=true` | JSON `{ query, count, tasks }` object |
+| `tasks-by-agent` | `<effortId>` | `LC_AGENT_ID` (preferred) **or** `LC_AGENT_LABEL` (legacy; req one), `LC_INCLUDE_COMPLETED=true`, `LC_INCLUDE_ARCHIVED=true` | JSON `{ query, count, tasks }` object |
 | `tasks-list` | `<effortId>` | `LC_INCLUDE_ARCHIVED=true` | JSON array of **every** task summary in the effort (all statuses; completed included) |
+| `agents-list` | — | — | JSON array of **every** agent definition (`id`, `name`, `tool`, `model`, `thinking_effort`, `order`, `created_at`, `updated_at`) |
 | `task-create` | `<effortId>` | `LC_NAME` (req), `LC_NOTES`, `LC_PARENT_ID` | JSON created task record |
 
 - Statuses: `open`, `in_progress`, `blocked`, `completed`.
-- Workers: `none`, `human`, `agent` (+ `worker_label`, e.g. `opencode`, `zcode`, `kimi`).
+- Workers: `none`, `human`, `agent`. An agent task carries its identity in
+  `agent_id` (the agent definition's UUID); `worker_label` is human-only and
+  empty for agent tasks.
 - `effort-by-name` matches the effort's own `name` case-insensitively, exact
   first then substring; `match` is `null` on zero or ambiguous matches.
-- `tasks-by-agent` returns tasks whose `worker` is `"agent"` **and** whose
-  `worker_label` matches the query case-insensitively; by default only
-  **active** tasks (`open`, `in_progress`, `blocked`) are returned.
+- `tasks-by-agent` matches tasks whose `worker` is `"agent"`. When `LC_AGENT_ID`
+  is set it filters by `agent_id` (exact UUID match; orphaned agent tasks whose
+  `agent_id` is null never match). Otherwise it falls back to a
+  case-insensitive `worker_label` match via `LC_AGENT_LABEL`. `LC_AGENT_ID`
+  takes precedence when both are set. By default only **active** tasks (`open`,
+  `in_progress`, `blocked`) are returned.
+- `agents-list` is the raw `list agents` view: every agent definition the app
+  knows about, regardless of `tool`. The orchestrator maps each record's `tool`
+  to a spawnable CLI; unsupported ones are skipped and reported.
 - `tasks-list` is the **raw** `list tasks` view: every task in the effort
   regardless of status or worker (completed tasks included; only archived is
   filterable via `LC_INCLUDE_ARCHIVED`). Use it when you must see completed
@@ -199,7 +253,7 @@ sdef commands.
   relies on this for its idle-reminder task). Omit `LC_PARENT_ID` entirely to
   create a root task; set it to a UUID to create a subtask under that parent.
 - On this surface, **nil optional fields are explicit JSON `null`**. `status`,
-  `worker`, `worker_label`, `is_archived` are always present.
+  `worker`, `worker_label`, `agent_id`, `is_archived` are always present.
 
 ### Errors
 
@@ -224,34 +278,18 @@ App-level error numbers (from LocalCortex):
 
 ### Step 1 — Collect the inputs
 
-Ask the user for three things. **Do not invent any of them.**
+Ask the user for **two** things. **Do not invent either, and do not ask for
+agents, models, or thinking efforts** — those are read from the app in step 3.
 
 1. **Effort name** — the Effort the agents will work in (resolved to an id by
    name). Often already provided as the skill argument.
 
-2. **Agent specs — a list.** Ask which agents to orchestrate, and for each, its
-   model and thinking effort. Build a list of specs, one per agent:
-
-   | field | required? | notes |
-   |---|---|---|
-   | `label` | **yes** | the agent's `worker_label` — `opencode`, `kimi`, or `zcode`. Not the literal string "agent". |
-   | `model` | optional | opencode: a `<provider>/<model>` from `opencode models`, e.g. `zhipuai-coding-plan/glm-5.2`. kimi: a `~/.kimi-code/config.toml` alias, e.g. `kimi-code/k3`. zcode: **ignored headless** (see warning below). |
-   | `effort` | optional | thinking effort. opencode: applied via `--variant` (provider-specific reasoning effort, e.g. `low`, `medium`, `high`, `max`, `minimal`). kimi: one of `low`, `medium`, `high`, `max`, applied via `KIMI_MODEL_THINKING_EFFORT`. zcode: **ignored headless**. |
-
-   Example the user might give: *"opencode with glm-5.2 at high effort, kimi with
-   K3 at high effort, and zcode with glm-5.2 at the highest effort."* That yields
-   three specs: `{label: opencode, model: zhipuai-coding-plan/glm-5.2, effort: high}`,
-   `{label: kimi, model: kimi-code/k3, effort: high}`, and
-   `{label: zcode, model: glm-5.2, effort: max}`.
-
-3. **CWD** — the absolute working directory the spawned workers run in. Default
+2. **CWD** — the absolute working directory the spawned workers run in. Default
    it to **the orchestrator's own current directory** (`pwd`) and **confirm it
    with the user** before using it. The user may override it (e.g. point at the
    Effort's repo or workspace folder). Do not assume a path.
 
-If the effort name is missing, or the agent list is empty, **ask** before doing
-anything else. You may proceed with an agent list whose specs omit model/effort
-(the CLIs just use their defaults).
+If the effort name is missing, **ask** before doing anything else.
 
 ### Step 2 — Validate the effort
 
@@ -269,47 +307,56 @@ LC_NAME='<effort name>' osascript -l JavaScript "$LC_JS" effort-by-name
 - both `null` → tell the user no effort matched. Retry with
   `LC_INCLUDE_ARCHIVED=true` if it may be archived; otherwise stop.
 
-**Do not run a setup-time `tasks-by-agent` open-task check.** Whether an agent
-has an open task *right now* is irrelevant to scheduling — the per-tick
-gatekeeper handles that. (This is a deliberate change from the single-agent
-version of this skill.)
+**Do not run a setup-time open-task check.** Whether an agent has an open task
+*right now* is irrelevant to scheduling — the per-tick gatekeeper handles that.
 
-### Step 3 — Warn about zcode model/effort
+### Step 3 — Read the agent roster from the app
 
-If **any** spec is type `zcode` **and** the user gave a `model` or `effort` for
-it, **tell them explicitly**:
+Read the agent definitions and map each to a spawnable CLI:
 
-> zcode's headless CLI does not expose a model or thinking-effort flag. The
-> model you named (`<model>`) and effort (`<effort>`) will be **recorded in the
-> automation but cannot be applied** when zcode is spawned. zcode runs at
-> whatever model its TUI currently has selected (set it with `/model` in the
-> zcode TUI first). opencode and kimi specs are unaffected.
+```bash
+osascript -l JavaScript "$LC_JS" agents-list
+```
+
+- **On failure** (non-zero exit, typically `-2700`) → **stop and inform the
+  user**: "I couldn't read agent definitions from LocalCortex. Make sure the
+  app is installed and running, then try again." **Do not create the
+  automation.**
+- **On success** → `JSON.parse` the array. For each agent record, compute its
+  CLI type from the `tool` field (case-insensitive substring):
+
+  | `tool` contains | type |
+  |---|---|
+  | `opencode` | `opencode` |
+  | `kimi` | `kimi` |
+  | `zcode` | `zcode` |
+  | else | unsupported |
+
+  Build two lists:
+  - **Supported agents** — one entry per agent whose `tool` mapped: `{id, name,
+    type, model, thinking_effort}`. Keep the original `order` for reporting.
+  - **Skipped agents** — name + reason (e.g. "tool `codex` has no spawnable
+    CLI").
+
+- **If the supported list is empty** (no agents defined, or none map to a known
+  CLI) → **stop and inform the user.** List what was found (if anything) and
+  why each was skipped, and tell them to define agents in the app's Settings
+  (or via `create agent`) with `tool` set to `opencode`, `kimi`, or `zcode`.
+  **Do not create the automation.**
+
+### Step 4 — Warn about zcode model/effort
+
+If **any** supported agent is type `zcode` **and** its record carries a `model`
+or non-empty `thinking_effort`, **tell the user explicitly**:
+
+> The zcode agent(s) (<names>) have a model/effort recorded in the app, but
+> zcode's headless CLI does not expose a model or thinking-effort flag. Those
+> settings will be **recorded in the automation but cannot be applied** when
+> zcode is spawned. zcode runs at whatever model its TUI currently has selected
+> (set it with `/model` in the zcode TUI first). opencode and kimi agents are
+> unaffected.
 
 Still proceed — zcode is spawned; only its model/effort settings are inert.
-
-### Step 4 — Confirm model references (if any spec names a model)
-
-For each spec that names a model, confirm the model reference is valid before
-scheduling (a typo'd model fails every tick for that agent):
-
-**For opencode** — the model must appear in `opencode models`:
-
-```bash
-opencode models | grep -F '<provider/model>'
-```
-
-No match → tell the user the model is unknown and ask them to pick one from
-`opencode models` (or omit the model to use the `model` configured in
-`~/.config/opencode/opencode.json`).
-
-**For kimi** — the alias must exist in `~/.kimi-code/config.toml`:
-
-```bash
-grep -n '<model alias>' ~/.kimi-code/config.toml
-```
-
-No match → tell the user the alias is unknown and ask them to pick one from
-`~/.kimi-code/config.toml` (or omit the model to use `default_model`).
 
 ### Step 5 — Create the ZCode automation (every 5 minutes)
 
@@ -321,40 +368,45 @@ flow, because the run is headless and has no access to this conversation.
 - `recurring`: `true`
 - `intervalUnit`: `"minute"`, `interval`: `5`  (equivalent cron `*/5 * * * *`)
 - `cron`: `"*/5 * * * *"`
-- `title`: a concise title that records the schedule, the effort, and **all
-  agent types**, e.g.
-  `lc-orchestrate-agents: poll <effort name> every 5 min for opencode, kimi, zcode`
+- `title`: a concise title that records the schedule and the effort, e.g.
+  `lc-orchestrate-agents: poll <effort name> every 5 min for all supported agents`
 - `prompt`: the **exact** prompt block from
   [Scheduled run](#the-scheduled-run-each-tick-headless) below, with
-  `<EFFORT_NAME>`, `<CWD>`, and the **agent-specs table** filled in with the
-  validated values. Do not paraphrase it.
+  `<EFFORT_NAME>` and `<CWD>` filled in with the validated values. The prompt
+  **does not embed agent ids** — it re-reads `agents-list` every tick, so agents
+  added/removed/edited in Settings take effect without recreating the
+  automation. Do not paraphrase it.
 
 ### Step 6 — Run the first tick immediately
 
 Do not wait ~5 minutes for the automation's first fire. Right after creating
 it, run one tick now, in this session: follow the
 [Scheduled run](#the-scheduled-run-each-tick-headless) flow below exactly as
-the automation prompt will, with the validated values filled in. If no agent has
-an open task, the tick either does nothing (some agent still has an
+the automation prompt will, with the validated values filled in. If no agent
+has an open task, the tick either does nothing (some agent still has an
 `in_progress` / `blocked` task) or, if no agent has any active task at all,
-creates the idle-reminder task (step 3 Branch B) — both are fine; the recurring
+creates the idle-reminder task (step 4 Branch B) — both are fine; the recurring
 automation will pick up future tasks.
 
 ### Step 7 — Report and tell the user how to stop it
 
-Report plainly: the effort (name + id), the **list of agent specs** (each
-type + model + effort, noting any zcode setting that won't be applied), the cwd,
-that the automation is recurring every 5 minutes, and that the first tick has
-already run — report its outcome (which workers were spawned, or that the effort
-was idle). **Tell the user how to stop it:** the automation persists until
-deleted; they can list automations (`CronList`) and delete the job by id
-(`CronDelete`), or ask you to stop it. Also tell them: **when every configured
+Report plainly: the effort (name + id), the **agent roster read from the app**
+(each supported agent: name, `tool` → type, model, thinking_effort; flag any
+zcode setting that won't be applied), any **skipped agents** (name + reason),
+the cwd, that the automation is recurring every 5 minutes, and that the first
+tick has already run — report its outcome (which workers were spawned, or that
+the effort was idle). **Tell the user how to stop it:** the automation persists
+until deleted; they can list automations (`CronList`) and delete the job by id
+(`CronDelete`), or ask you to stop it. Also tell them: **when every supported
 agent has finished all its active work (no `open` / `in_progress` / `blocked`
 tasks left for any of them), the tick will create one reminder task in the same
 effort telling them to delete the automation — completing that reminder does
 NOT stop the automation, they must still `CronList` + `CronDelete` it.** Also
 remind them the spawned worker CLIs must stay logged in (`opencode auth login`
-/ `zcode login` / `kimi login`) for ticks to do real work.
+/ `zcode login` / `kimi login`) for ticks to do real work. Finally, tell them
+**the agent roster is re-read every tick**, so editing agents in the app's
+Settings (or via `create agent` / `update agent` / `delete agent`) takes effect
+on the next tick without recreating the automation.
 
 ---
 
@@ -364,27 +416,32 @@ remind them the spawned worker CLIs must stay logged in (`opencode auth login`
 > block into the automation's `prompt`. **Keep it self-contained** — a headless
 > run cannot ask the user anything mid-tick, and must not chain to sibling
 > skills (it *spawns* workers that run `lc-start-work`; it does not load that
-> skill itself). If no configured agent has any active task, the tick creates a
-> single reminder task (see step 3 Branch B) and exits; it cannot stop itself.
+> skill itself). If no supported agent has any active task, the tick creates a
+> single reminder task (see step 4 Branch B) and exits; it cannot stop itself.
 
-You are a LocalCortex multi-agent delegation orchestrator. Poll the Effort
-**`<EFFORT_NAME>`** for tasks assigned to each of the agents listed below. For
-**each** agent that has an `open` task, spawn that agent's CLI headless (from
-the working directory **`<CWD>`**) with a one-line prompt telling it to run the
-`lc-start-work` skill on this effort for that agent. Spawn all such workers **in
-parallel**, then wait for all of them. If an agent has no open task, do not
-spawn it. If **no** agent has any active task (`open` / `in_progress` /
-`blocked`), instead create one reminder task telling the user to stop the
-automation (step 3 Branch B) — the automation cannot delete itself. Work **only
-one task per agent per tick**. Never touch a task whose `worker` is not `agent`
-or whose `worker_label` is not one of the configured labels.
+You are a LocalCortex multi-agent delegation orchestrator. Each tick:
 
-**Agent specs for this run** (filled in at setup):
+1. resolve the Effort **`<EFFORT_NAME>`** by name;
+2. read the agent roster from the app (`list agents`) and keep every agent
+   whose `tool` maps to a supported CLI (opencode / kimi / zcode);
+3. for **each** supported agent that has an `open` task (matched by
+   `agent_id`), spawn that agent's CLI headless from the working directory
+   **`<CWD>`** with a one-line prompt telling it to run the `lc-start-work`
+   skill on this effort for that agent's id;
+4. spawn all such workers **in parallel**, then wait for all of them.
 
-| label | model | effort | spawn command |
-|---|---|---|---|
-| `<AGENT_LABEL_1>` | `<model or none>` | `<effort or none>` | `<the exact spawn command for this type, with model/effort applied for opencode and kimi; for zcode, model/effort omitted with a comment that they are inert>` |
-| `<AGENT_LABEL_2>` | … | … | … |
+If an agent has no open task, do not spawn it. If **no** supported agent has any
+active task (`open` / `in_progress` / `blocked`), instead create one reminder
+task telling the user to stop the automation (step 4 Branch B) — the automation
+cannot delete itself. Work **only one task per agent per tick**. Never touch a
+task whose `worker` is not `agent` or whose `agent_id` is not one of the
+supported agents' ids.
+
+The `tool` → CLI mapping is case-insensitive (substring of the `tool` field):
+`opencode`→opencode, `kimi`→kimi, `zcode`→zcode, anything else→skip. Apply each
+agent's `model` and `thinking_effort` to opencode (`-m` / `--variant`) and kimi
+(`-m` / `KIMI_MODEL_THINKING_EFFORT`); for zcode they are inert (no headless
+flag) — spawn zcode anyway, with no model/effort flags.
 
 ### Helper
 
@@ -412,23 +469,44 @@ LC_NAME='<EFFORT_NAME>' osascript -l JavaScript "$LC_JS" effort-by-name
   this tick. **Stop.** Do not spawn anything. (This should not happen after a
   validated setup, but a renamed/deleted effort must not crash the tick.)
 
-### 2. For each configured agent, check for an open task; also fetch the raw task list
+### 2. Read the agent roster from the app
 
-Run `tasks-by-agent` **once per agent spec**, using that agent's `worker_label`:
+Re-read the agent definitions every tick (so edits in Settings take effect
+without recreating the automation):
 
 ```bash
-LC_AGENT_LABEL='<AGENT_LABEL>' \
+osascript -l JavaScript "$LC_JS" agents-list
+```
+
+- **Non-zero exit** (e.g. `-2700`, app not running) → **stop.** Do not spawn
+  anything; the next tick will retry.
+- **Success** → `JSON.parse` the array. For each agent record, map its `tool`
+  (case-insensitive substring) to a CLI type:
+  contains `opencode`→`opencode`, `kimi`→`kimi`, `zcode`→`zcode`, else skip.
+  Build the supported roster for this tick: one entry per mapped agent
+  `{id, name, type, model, thinking_effort}`.
+- **Empty roster** (no agents, or none map to a known CLI) → **stop.** Do not
+  spawn anything this tick. (This can happen if the user deletes or retools all
+  agents; the next tick re-reads.)
+
+### 3. For each supported agent, find its tasks by agent_id; also fetch the raw task list
+
+Run `tasks-by-agent` **once per roster agent**, using that agent's `id`:
+
+```bash
+LC_AGENT_ID='<AGENT_ID>' \
   osascript -l JavaScript "$LC_JS" tasks-by-agent '<EFFORT_ID>'
 ```
 
-Each call returns `{ query, count, tasks }` of that agent's **active** tasks.
-For each agent, record:
+Each call returns `{ query, count, tasks }` of that agent's **active** tasks
+(matched by `agent_id` — orphaned tasks with null `agent_id` never match). For
+each agent, record:
 
 - whether it **has an `open` task** (an agent has work this tick iff at least one
   of its tasks has `status == "open"`; sort candidates by `order`, then
-  `created_at`) — this drives step 3 Branch A;
+  `created_at`) — this drives step 4 Branch A;
 - whether it has **any active task at all** (`open` / `in_progress` / `blocked`)
-  — this drives the terminal-state test in step 3 Branch B.
+  — this drives the terminal-state test in step 4 Branch B.
 
 Do not touch tasks another worker already started (`in_progress`); they are not
 yours.
@@ -440,30 +518,30 @@ osascript -l JavaScript "$LC_JS" tasks-list '<EFFORT_ID>'
 ```
 
 This returns **every** task in the effort, any status, any worker (completed
-included). Keep it for step 3 Branch B's dedup scan and parent-pick. (You do not
+included). Keep it for step 4 Branch B's dedup scan and parent-pick. (You do not
 need it in Branch A.)
 
-### 3. Decide: spawn workers, or handle the terminal state
+### 4. Decide: spawn workers, or handle the terminal state
 
-Look at the per-agent results from step 2 and pick **one** branch.
+Look at the per-agent results from step 3 and pick **one** branch.
 
 #### Branch A — at least one agent has an `open` task → spawn
 
-If any configured agent has an `open` task, proceed to **step 4** and spawn one
+If any supported agent has an `open` task, proceed to **step 5** and spawn one
 worker per such agent (the existing spawn flow). **Do not create a reminder
 task.** The effort is not done.
 
 #### Branch B — no agent has any active task → terminal state
 
-If **no** configured agent has any active task (`open` / `in_progress` /
+If **no** supported agent has any active task (`open` / `in_progress` /
 `blocked`), the effort is idle. The automation **cannot delete or disable
 itself** — a scheduled run is blocked from `CronCreate` / `CronUpdate` /
 `CronDelete` by the host (only `CronList` is allowed). So instead, create
 **one** reminder task in this effort telling the user to stop the automation.
-Skip step 4 entirely (do not spawn any worker this tick).
+Skip step 5 entirely (do not spawn any worker this tick).
 
 1. **Dedup — do not create a duplicate reminder.** Using the raw task list from
-   step 2, scan **every** task (open **and** completed — the reminder may
+   step 3, scan **every** task (open **and** completed — the reminder may
    already have been completed/dismissed by the user) for one whose `name`
    contains the sentinel (case-insensitive):
 
@@ -476,8 +554,8 @@ Skip step 4 entirely (do not spawn any worker this tick).
    tick computes the same match.)
 
 2. **Pick the reminder's parent.** Look at the processed agent tasks in the raw
-   list — the tasks whose `worker` is `agent` **and** whose `worker_label` is
-   one of the configured labels (regardless of status):
+   list — the tasks whose `worker` is `agent` **and** whose `agent_id` is one of
+   the supported agents' ids (regardless of status):
 
    - If they **all share the same non-null `parent_id`** → create the reminder
      **under that parent** (set `LC_PARENT_ID` to it).
@@ -496,26 +574,26 @@ Skip step 4 entirely (do not spawn any worker this tick).
    ```
 
    The created task defaults to `worker: none` (the `create task` command has no
-   worker param), so **no configured agent will ever pick it up** — the reminder
+   worker param), so **no supported agent will ever pick it up** — the reminder
    cannot revive the loop.
 
 4. **Stop.** Do not spawn any worker this tick. Subsequent ticks will hit
    Branch B again, fail the dedup check (the reminder now exists), and exit
    without creating a duplicate.
 
-**Reminder notes template** (fill in `<EFFORT_NAME>` and the agent labels; keep
+**Reminder notes template** (fill in `<EFFORT_NAME>` and the agent names; keep
 the `CronList` / `CronDelete` instructions so the user knows exactly how to
 stop):
 
 ```
-All configured agents (<labels, comma-separated>) have no open, in_progress, or
+All supported agents (<names, comma-separated>) have no open, in_progress, or
 blocked tasks in the '<EFFORT_NAME>' effort. The orchestrator automation is
 still running every 5 minutes and will keep firing no-op ticks until you delete
 it — a scheduled run cannot stop itself.
 
 To stop it: run CronList, find the automation titled
-"lc-orchestrate-agents: poll <EFFORT_NAME> every 5 min for <labels>", and
-delete it by id with CronDelete (or ask your assistant to stop it).
+"lc-orchestrate-agents: poll <EFFORT_NAME> every 5 min for all supported agents",
+and delete it by id with CronDelete (or ask your assistant to stop it).
 
 Completing this reminder does NOT stop the automation — you must delete the
 automation separately.
@@ -523,34 +601,35 @@ automation separately.
 — created by lc-orchestrate-agents on <tick date/time>
 ```
 
-### 4. Spawn one worker per agent that has an open task, in parallel
+### 5. Spawn one worker per agent that has an open task, in parallel
 
-*(Reached only from step 3 Branch A.)* For **each** agent that has an `open`
-task, build its worker prompt and spawn it. Use the spawn command for that
-agent's type from the specs table. **Launch all of them concurrently**
-(bash `&`), then `wait` for all to finish and collect each exit code. One task
-per agent per tick — each worker's `lc-start-work` handles the
-claim/work/complete; do not spawn a second worker for the same agent in the same
-tick even if it has multiple open tasks.
+*(Reached only from step 4 Branch A.)* For **each** supported agent that has an
+`open` task, build its worker prompt and spawn it. Use the spawn command for
+that agent's type, applying that agent's own `model` and `thinking_effort`.
+**Launch all of them concurrently** (bash `&`), then `wait` for all to finish
+and collect each exit code. One task per agent per tick — each worker's
+`lc-start-work` handles the claim/work/complete; do not spawn a second worker
+for the same agent in the same tick even if it has multiple open tasks.
 
 **If the agent type is `opencode`** — model via `-m <provider/model>` (omit if
-model is `none`), thinking effort via `--variant` (omit if effort is `none`),
-`--auto` to auto-approve tool calls, `--dir` for the cwd:
+the agent's `model` is empty), thinking effort via `--variant` (omit if
+`thinking_effort` is empty), `--auto` to auto-approve tool calls, `--dir` for
+the cwd:
 
 ```bash
 opencode run --dir "<CWD>" -m <model> --variant <effort> --auto "<worker prompt for this agent>"
 ```
 
-**If the agent type is `kimi`** — model via `-m` (omit if model is `none`),
-thinking effort via `KIMI_MODEL_THINKING_EFFORT` (omit if effort is `none`),
-`-p` prompt mode (no `-y`):
+**If the agent type is `kimi`** — model via `-m` (omit if the agent's `model`
+is empty), thinking effort via `KIMI_MODEL_THINKING_EFFORT` (omit if
+`thinking_effort` is empty), `-p` prompt mode (no `-y`):
 
 ```bash
 cd "<CWD>" && KIMI_MODEL_THINKING_EFFORT=<effort> kimi -m <model> -p "<worker prompt for this agent>"
 ```
 
 **If the agent type is `zcode`** — Electron-as-Node bundle; **no model/effort
-flags** (they are inert even if recorded in the specs table):
+flags** (they are inert even if the agent record carries them):
 
 ```bash
 ELECTRON_RUN_AS_NODE=1 \
@@ -594,7 +673,7 @@ build), check that worker CLI's `--help` for the exact headless flags on that
 version before the next tick — opencode/kimi/zcode flag names can vary across
 builds.
 
-### 5. One task per agent per tick
+### 6. One task per agent per tick
 
 After spawning (one worker per agent that had an open task), **stop**. Do not
 loop to the next open task for any agent in the same tick — the next tick
@@ -604,25 +683,30 @@ automation easy to reason about.
 ### Worker prompt
 
 The single-sentence instruction passed to each spawned worker, parameterized by
-**that worker's own** label (step 4 fills it in per agent):
+**that worker's own** agent id and name (step 5 fills it in per agent):
 
 ```
-Use the lc-start-work skill to do one task's worth of work on the '<EFFORT_NAME>' effort for the '<AGENT_LABEL>' agent. You are running headless; make reasonable assumptions and do not ask questions.
+Use the lc-start-work skill to do one task's worth of work on the '<EFFORT_NAME>' effort for the agent with id '<AGENT_ID>' (name: '<AGENT_NAME>'). You are running headless; make reasonable assumptions and do not ask questions.
 ```
 
 ### Notes for the run
 
 - **Headless means no questions.** The orchestrator never asks the user anything
-  mid-tick; if the effort can't be resolved it exits silently, and if no agent
-  has any active task it creates the reminder task (step 3 Branch B) and exits.
-  The spawned workers are likewise told to run headless.
+  mid-tick; if the effort can't be resolved or the agent roster can't be read it
+  exits silently, and if no agent has any active task it creates the reminder
+  task (step 4 Branch B) and exits. The spawned workers are likewise told to
+  run headless.
+- **The agent roster is re-read every tick.** Adding, removing, renaming, or
+  retooling an agent in the app's Settings (or via `create agent` / `update
+  agent` / `delete agent`) takes effect on the next tick — no need to recreate
+  the automation.
 - **At most one reminder per effort.** When the effort goes idle, the tick
   creates exactly one reminder task (dedup'd by the `[automation] all agents
   idle` sentinel across **all** statuses, including a reminder the user already
   completed). Subsequent idle ticks fail the dedup check and create nothing.
   Completing or dismissing the reminder does **not** stop the automation — the
   user must still delete it via `CronList` + `CronDelete`. The reminder is
-  created with `worker: none`, so no configured agent will ever pick it up.
+  created with `worker: none`, so no supported agent will ever pick it up.
 - **Fail safe, per worker.** If a spawn fails, leave that agent's tasks as they
   are; do not complete a task on a worker's behalf. Other workers in the same
   tick are unaffected. The next tick (or a human) picks up unfinished work.
@@ -632,21 +716,24 @@ Use the lc-start-work skill to do one task's worth of work on the '<EFFORT_NAME>
   worker isn't logged in, the tick can't fix it; surface it in the tick's output
   and stop that worker. The user must run `opencode auth login` / `zcode login`
   / `kimi login` separately.
-- **zcode model/effort are inert.** Even if the specs table records a
-  model/effort for a zcode agent, the zcode spawn command cannot apply them —
-  do not invent flags. opencode and kimi specs are applied as documented.
+- **zcode model/effort are inert.** Even if a zcode agent's record carries a
+  model/effort, the zcode spawn command cannot apply them — do not invent flags.
+  opencode and kimi agents are applied as documented.
 
 ---
 
 ## Reporting to the user
 
-At setup, report the effort (name + id), the **list of agent specs** (each type
-+ model + effort, flagging any zcode setting that won't be applied headless),
-the cwd, the schedule (every 5 minutes, recurring), the outcome of the first
-tick (already run at setup), and **how to stop it** (list with `CronList`,
+At setup, report the effort (name + id), the **agent roster read from the app**
+(each supported agent: name, `tool` → type, model, thinking_effort; flag any
+zcode setting that won't be applied headless), any **skipped agents** (name +
+reason), the cwd, the schedule (every 5 minutes, recurring), the outcome of the
+first tick (already run at setup), and **how to stop it** (list with `CronList`,
 delete by id with `CronDelete`). Also mention the **idle-reminder behavior**:
 once no agent has any active task left, the tick creates a single reminder task
 in the effort (dedup'd, so only ever one) telling the user to delete the
-automation; completing that reminder does not stop the automation. During the
+automation; completing that reminder does not stop the automation. Finally note
+that **the agent roster is re-read every tick**, so editing agents in the app
+takes effect on the next tick without recreating the automation. During the
 scheduled run there is no user to report to; the tick's stdout/stderr (per
 worker, plus the reminder-creation result) is all the trace there is.

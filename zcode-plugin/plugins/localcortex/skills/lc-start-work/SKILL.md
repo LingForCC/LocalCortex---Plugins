@@ -3,18 +3,20 @@ name: lc-start-work
 description: >-
   Do one task's worth of work on a named LocalCortex Effort — the macOS task
   manager app — on demand, for a given agent. Finds the next open task assigned
-  to that agent (worker_label, e.g. zcode), claims it, does the work, writes
-  artifacts into the effort's workspace folder, and completes it — one task,
-  then stops. Drives LocalCortex through its JXA/AppleScript surface
-  (osascript), not MCP. Use whenever the user wants to run a single autonomous
-  pull-work-and-complete tick right now without setting up a recurring schedule
-  — e.g. "work one zcode task on Build", "have the agent pick up the next open
-  task on Payments and do it". This is the same flow each scheduled tick of
-  lc-start-job runs, just invoked once. Does not create a ZCode automation and
-  does not chain sibling skills.
-argument-hint: "[effort name] [agent label]"
+  to that agent (matched by agent_id for app-defined agents, or worker_label as
+  a legacy fallback), claims it, does the work, writes artifacts into the
+  effort's workspace folder, and completes it — one task, then stops. The agent
+  may be given by id (preferred) or by name/label; a name is resolved to an id
+  via the app's list agents. Drives LocalCortex through its JXA/AppleScript
+  surface (osascript), not MCP. Use whenever the user wants to run a single
+  autonomous pull-work-and-complete tick right now without setting up a
+  recurring schedule — e.g. "work one zcode task on Build", "have the agent
+  pick up the next open task on Payments and do it". This is the same flow each
+  scheduled tick of lc-start-job runs, just invoked once. Does not create a
+  ZCode automation and does not chain sibling skills.
+argument-hint: "[effort name] [agent id or label]"
 allowed-tools: [Bash, Read, Write, Edit]
-version: 0.1.9
+version: 0.1.10
 license: MIT
 ---
 
@@ -30,8 +32,11 @@ recurring 5-minute schedule, and it does **not** create a ZCode automation.
 The user provides the two inputs:
 
 - **Effort name** — the Effort to look in (resolved to an id by name).
-- **Agent label** — the `worker_label` of the agent that owns the tasks
-  (e.g. `zcode`). This is **not** the literal string "agent".
+- **Agent** — the agent that owns the tasks, given as an **agent id**
+  (preferred for app-defined agents — the UUID from `list agents`) **or** an
+  agent name/label (legacy). If the user gives a name, resolve it to an id via
+  `agents-list` (see [Step 1](#step-1--confirm-the-two-inputs)). This is **not**
+  the literal string "agent".
 
 Drive LocalCortex **exclusively through its JXA/AppleScript surface** via the
 bundled `lc.js` helper — never use `mcp__localcortex__*` tools in this skill's
@@ -61,9 +66,9 @@ on the Launch effort for zcode".
 ## Prerequisites
 
 - The **LocalCortex** macOS app is installed and built with the AppleScript/JXA
-  surface (sdef commands used: `list efforts`, `list tasks`, `get task`,
-  `update task`, `complete task`, `workspace path`). Apple Events auto-launch
-  the app if it isn't running — no "is the server up" check needed.
+  surface (sdef commands used: `list efforts`, `list tasks`, `list agents`,
+  `get task`, `update task`, `complete task`, `workspace path`). Apple Events
+  auto-launch the app if it isn't running — no "is the server up" check needed.
 - The **first call from the ZCode host binary triggers a one-time macOS TCC
   prompt** ("*… wants to control LocalCortex*"). After the user grants it,
   subsequent calls are silent. Tell the user to expect this prompt the first
@@ -106,21 +111,29 @@ sdef commands.
 | subcommand | argv | env vars | returns |
 |---|---|---|---|
 | `effort-by-name` | — | `LC_NAME` (req), `LC_INCLUDE_ARCHIVED=true` | JSON `{ query, match, candidates }` object |
-| `tasks-by-agent` | `<effortId>` | `LC_AGENT_LABEL` (req), `LC_INCLUDE_COMPLETED=true`, `LC_INCLUDE_ARCHIVED=true` | JSON `{ query, count, tasks }` object |
+| `tasks-by-agent` | `<effortId>` | `LC_AGENT_ID` (preferred) **or** `LC_AGENT_LABEL` (legacy; req one), `LC_INCLUDE_COMPLETED=true`, `LC_INCLUDE_ARCHIVED=true` | JSON `{ query, count, tasks }` object |
 | `tasks-get` | `<taskId>` | — | JSON task record **with `notes`** |
 | `task-update` | `<taskId>` | `LC_NAME`, `LC_NOTES`, `LC_STATUS`, `LC_WORKER`, `LC_WORKER_LABEL` | JSON updated task |
 | `workspace-path` | `<effortId>` | — | JSON string path, or literal `null` |
 | `task-complete` | `<taskId>` | `LC_COMPLETED=false` (default `true`) | JSON task record |
+| `agents-list` | — | — | JSON array of **every** agent definition (`id`, `name`, `tool`, `model`, `thinking_effort`, `order`, `created_at`, `updated_at`) |
 
 - Statuses: `open`, `in_progress`, `blocked`, `completed`.
-- Workers: `none`, `human`, `agent` (+ `worker_label`, e.g. `zcode`).
+- Workers: `none`, `human`, `agent`. An agent task carries its identity in
+  `agent_id` (the agent definition's UUID); `worker_label` is human-only and
+  empty for agent tasks.
 - `effort-by-name` matches the effort's own `name` case-insensitively, exact
   first then substring; `match` is `null` on zero or ambiguous matches.
-- `tasks-by-agent` returns tasks whose `worker` is `"agent"` **and** whose
-  `worker_label` matches the query case-insensitively; by default only
-  **active** tasks (`open`, `in_progress`, `blocked`) are returned.
+- `tasks-by-agent` matches tasks whose `worker` is `"agent"`. When `LC_AGENT_ID`
+  is set it filters by `agent_id` (exact UUID match; orphaned agent tasks whose
+  `agent_id` is null never match). Otherwise it falls back to a
+  case-insensitive `worker_label` match via `LC_AGENT_LABEL`. `LC_AGENT_ID`
+  takes precedence when both are set. By default only **active** tasks (`open`,
+  `in_progress`, `blocked`) are returned.
+- `agents-list` is the raw `list agents` view: every agent definition the app
+  knows about. Use it to resolve an agent name to its `id`.
 - On this surface, **nil optional fields are explicit JSON `null`** (e.g.
-  `parent_id`, `notes`, `due_date`, `completed_at`). `has_notes`,
+  `parent_id`, `notes`, `due_date`, `completed_at`, `agent_id`). `has_notes`,
   `is_archived`, `worker`, `worker_label`, `status` are always present.
 
 ### Errors
@@ -149,11 +162,26 @@ App-level error numbers (from LocalCortex):
 The run is defined by two things the user must provide:
 
 - **Effort name** — the Effort to look in (resolved to an id by name).
-- **Agent label** — the `worker_label` of the agent that owns the tasks
-  (e.g. `zcode`). This is **not** the literal string "agent".
+- **Agent** — the agent that owns the tasks. **Preferred: an agent id** (the
+  UUID from the app's `list agents` — this is what app-defined agents set on
+  their tasks via `agent_id`). **Fallback: an agent name or label** (legacy
+  `worker_label` matching). This is **not** the literal string "agent".
 
-If either is missing or ambiguous, **ask** before doing anything else. Do not
-invent an effort or guess a label.
+If the user gives an **agent id**, use it directly as `LC_AGENT_ID`. If they
+give a **name** (or a label that may be an agent's name), resolve it to an id:
+
+```bash
+osascript -l JavaScript "$LC_JS" agents-list
+```
+
+Pick the agent record whose `name` matches (case-insensitive, exact first). If
+exactly one matches, use its `id` as `LC_AGENT_ID`. If zero or multiple match,
+**do not guess** — list the candidates (name + id + tool) and ask the user
+which one they mean. (If no `list agents` match is found and the input looks
+like a legacy free-text label, fall back to `LC_AGENT_LABEL` matching instead.)
+
+If either the effort name or the agent is missing or ambiguous, **ask** before
+doing anything else. Do not invent an effort or guess an agent.
 
 ### Step 2 — Resolve the effort to exactly one match
 
@@ -171,7 +199,16 @@ LC_NAME='<effort name>' osascript -l JavaScript "$LC_JS" effort-by-name
 
 ### Step 3 — Find an open task for the agent
 
+Prefer the **agent id** path (correct for app-defined agents, whose tasks carry
+identity in `agent_id`); fall back to the label path only when no id was
+resolved:
+
 ```bash
+# agent id path (preferred)
+LC_AGENT_ID='<agent id>' \
+  osascript -l JavaScript "$LC_JS" tasks-by-agent "$EFFORT_ID"
+
+# legacy label path (fallback)
 LC_AGENT_LABEL='<agent label>' \
   osascript -l JavaScript "$LC_JS" tasks-by-agent "$EFFORT_ID"
 ```
@@ -184,21 +221,40 @@ open tasks for that agent (a `count` of 0 is not an error, just "nothing to do
 right now"). Do not touch a task another worker already started
 (`in_progress`); it is not yours.
 
-A `count` of 0 may also mean a typo'd label — if it is 0, mention the label you
-used so the user can confirm it was correct.
+A `count` of 0 may also mean the agent id/label is wrong — if it is 0, mention
+the id/label you used so the user can confirm it was correct.
 
 ### Step 4 — Claim the task, then re-read to confirm
 
-Claim the chosen task as the agent before doing any work:
+Claim the chosen task before doing any work. The claim differs by how the agent
+was identified:
 
-```bash
-LC_STATUS=in_progress LC_WORKER=agent LC_WORKER_LABEL='<agent label>' \
-  osascript -l JavaScript "$LC_JS" task-update "$TASK_ID"
-```
+- **Agent id path (preferred):** the task is already assigned to this agent
+  (its `agent_id` is already set by whoever created/claimed it). Claiming only
+  flips the status — do **not** set `worker` or `worker_label` (that would
+  clobber the existing assignment and blank the agent identity):
 
-Then re-read it and confirm `worker` is `agent` **and** `worker_label` is the
-agent label. If the claim did not take (another worker holds it, or the task
-moved), **stop** — do not work a task you do not own.
+  ```bash
+  LC_STATUS=in_progress \
+    osascript -l JavaScript "$LC_JS" task-update "$TASK_ID"
+  ```
+
+  Then re-read it and confirm `status` is `in_progress` **and** `agent_id` is
+  still this agent's id (unchanged).
+
+- **Legacy label path:** set `worker` to `agent` and `worker_label` to the
+  label, in addition to the status:
+
+  ```bash
+  LC_STATUS=in_progress LC_WORKER=agent LC_WORKER_LABEL='<agent label>' \
+    osascript -l JavaScript "$LC_JS" task-update "$TASK_ID"
+  ```
+
+  Then re-read it and confirm `worker` is `agent` **and** `worker_label` is the
+  agent label.
+
+If the claim did not take (another worker holds it, or the task moved), **stop**
+— do not work a task you do not own.
 
 ### Step 5 — Read the task and do the work
 
@@ -279,9 +335,9 @@ use `lc-start-job` for a recurring worker. Report what you did.
 
 ## Reporting to the user
 
-Report plainly: the effort (name + id), the agent label, and the outcome —
-which task you worked and completed (title + id + a one-line summary of what
-you did), or that there was no open task for that agent. If you could not
-complete the task (e.g. an incomplete blocker), say so and leave it
-`in_progress`. No automation is created by this skill, so there is nothing to
-"stop".
+Report plainly: the effort (name + id), the agent (id + name, or label on the
+legacy path), and the outcome — which task you worked and completed (title +
+id + a one-line summary of what you did), or that there was no open task for
+that agent. If you could not complete the task (e.g. an incomplete blocker),
+say so and leave it `in_progress`. No automation is created by this skill, so
+there is nothing to "stop".

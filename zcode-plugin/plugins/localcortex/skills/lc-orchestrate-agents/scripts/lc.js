@@ -84,18 +84,28 @@ function findEffortByName(efforts, query) {
   return { match: null, candidates: substring.length ? substring : null };
 }
 
-// A task is assigned to an agent when its `worker` is "agent". The label
-// match is case-insensitive against `worker_label`. By default only active
+// A task is assigned to an agent when its `worker` is "agent". The identity
+// match is by `agent_id` when an agentId is given (the modern wire —
+// app-defined agents set agent_id, not worker_label, which is now human-only
+// for agent tasks); otherwise it falls back to a case-insensitive match
+// against `worker_label` (legacy). Orphaned agent tasks (worker == "agent"
+// but agent_id is null) never match an agentId query. By default only active
 // tasks (open / in_progress / blocked) qualify; archived and completed tasks
 // are excluded unless the caller opts in.
 // (Mirrors the lc-fetch-agent-task sibling so behavior stays consistent.)
-function filterTasksByAgent(tasks, label, includeCompleted, includeArchived) {
+function filterTasksByAgent(tasks, label, includeCompleted, includeArchived, agentId) {
   const q = norm(label);
+  const byId = agentId !== undefined && agentId !== null && agentId !== "";
   const out = [];
   for (let i = 0; i < tasks.length; i++) {
     const t = tasks[i];
     if (t.worker !== "agent") continue;
-    if (norm(t.worker_label) !== q) continue;
+    if (byId) {
+      // agent_id is a UUID string or JSON null on the wire; null never matches.
+      if (!t.agent_id || t.agent_id !== agentId) continue;
+    } else {
+      if (norm(t.worker_label) !== q) continue;
+    }
     if (!includeCompleted && t.status === "completed") continue;
     if (!includeArchived && t.is_archived) continue;
     out.push(t);
@@ -123,8 +133,13 @@ function run() {
     case "tasks-by-agent": {
       const effortId = positional[0];
       if (!effortId) throw new Error("usage: lc.js tasks-by-agent <effortId>");
+      // agent_id takes precedence (modern wire for app-defined agents); fall
+      // back to the legacy worker_label match. At least one must be provided.
+      const agentId = envOpt("LC_AGENT_ID");
       const label = envStr("LC_AGENT_LABEL");
-      if (!label) throw new Error("LC_AGENT_LABEL is required for tasks-by-agent");
+      if (!agentId && !label) {
+        throw new Error("LC_AGENT_ID or LC_AGENT_LABEL is required for tasks-by-agent");
+      }
       // listTasks returns the app's JSON-string result; parse to filter, then
       // re-stringify the composite object below.
       const raw = app.listTasks(effortId, {
@@ -135,13 +150,24 @@ function run() {
         tasks,
         label,
         envOpt("LC_INCLUDE_COMPLETED") === "true",
-        envOpt("LC_INCLUDE_ARCHIVED") === "true"
+        envOpt("LC_INCLUDE_ARCHIVED") === "true",
+        agentId
       );
       result = JSON.stringify({
-        query: { effort_id: effortId, agent_label: label },
+        query: agentId
+          ? { effort_id: effortId, agent_id: agentId }
+          : { effort_id: effortId, agent_label: label },
         count: matched.length,
         tasks: matched,
       });
+      break;
+    }
+    case "agents-list": {
+      // listAgents returns the app's JSON-string result verbatim — a JSON
+      // array of agent definition records (id, name, model, thinking_effort,
+      // tool, order, created_at, updated_at). Read-only on this surface; the
+      // orchestrator maps each record's `tool` to a spawnable CLI.
+      result = app.listAgents();
       break;
     }
     case "tasks-list": {
@@ -222,7 +248,7 @@ function run() {
       throw new Error(
         "unknown subcommand: '" + cmd + "'. Expected one of: " +
           "effort-by-name, tasks-by-agent, tasks-list, tasks-get, " +
-          "task-create, task-update, workspace-path, task-complete."
+          "task-create, task-update, workspace-path, task-complete, agents-list."
       );
   }
 
