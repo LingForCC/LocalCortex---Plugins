@@ -5,7 +5,10 @@ description: >-
   materialized from a named task Template's prompt. Resolves the effort and the
   template by name, reads the template's free-text prompt, interprets it, and
   creates the described tasks (roots and subtasks) in the effort — then applies
-  assignments and Blocked / blocker relationships on top. When a task is
+  assignments and Blocked / blocker relationships on top. Agent assignments
+  resolve an agent name (as written in the template) to a defined agent's id via
+  `list agents`, then claim the task for that agent by id (the modern wire,
+  since `worker label` became human-only in 0.3.3). When a task is
   Blocked, the status and its blocker list are set together in one update (the
   app rejects Blocked without blockers). Drives LocalCortex through its
   JXA/AppleScript surface (osascript), not MCP. Use whenever the user wants to
@@ -15,7 +18,7 @@ description: >-
   Launch". Does not work or complete tasks; it only creates them.
 argument-hint: "[effort name] [template name]"
 allowed-tools: [Bash, Read]
-version: 0.1.2
+version: 0.1.3
 license: MIT
 ---
 
@@ -32,7 +35,7 @@ helper — never use `mcp__localcortex__*` tools in this skill's flow.
 A template is **just a name + a prompt** — there are no structured fields and no
 placeholder substitution. The prompt is the instruction; **interpreting it is
 this skill's job** (it is not done by the app). The existing `create task`
-(with `name`, `notes`, `due date`, `parent`, optional `worker`/`worker_label`
+(with `name`, `notes`, `due date`, `parent`, optional `worker`/`agent id`
 applied after via `update task`) is the full materialization surface.
 
 The user provides the two inputs:
@@ -63,8 +66,8 @@ template inside Launch", "instantiate the Q&A pass template on Build".
 
 - The **LocalCortex** macOS app is installed and built with the AppleScript/JXA
   surface (sdef commands used: `list efforts`, `list templates`, `list tasks`,
-  `workspace path`, `create task`, `update task`). Apple Events auto-launch the
-  app if it isn't running — no "is the server up" check needed.
+  `list agents`, `workspace path`, `create task`, `update task`). Apple Events
+  auto-launch the app if it isn't running — no "is the server up" check needed.
 - The **first call from the ZCode host binary triggers a one-time macOS TCC
   prompt** ("*… wants to control LocalCortex*"). After the user grants it,
   subsequent calls are silent. Tell the user to expect this prompt the first
@@ -100,28 +103,34 @@ osascript -l JavaScript "$LC_JS" <subcommand> [positional args]
 ## Command reference
 
 The helper prints the app's JSON-string result to stdout — `JSON.parse` it (or
-read the JSON directly). `effort-by-name` and `template-by-name` are
-client-side composites (the app has no name-search command of its own); the
-rest map 1:1 to sdef commands.
+read the JSON directly). `effort-by-name`, `template-by-name`, and
+`agent-by-name` are client-side composites (the app has no name-search command
+of its own); the rest map 1:1 to sdef commands.
 
 | subcommand | argv | env vars | returns |
 |---|---|---|---|
 | `effort-by-name` | — | `LC_NAME` (req), `LC_INCLUDE_ARCHIVED=true` | JSON `{ query, match, candidates }` object |
 | `templates-list` | — | — | JSON array of template records (`id`, `name`, `prompt`, `order`, …) |
 | `template-by-name` | — | `LC_NAME` (req) | JSON `{ query, match, candidates }` object |
+| `agents-list` | — | — | JSON array of agent records (`id`, `name`, `model`, `thinking_effort`, `tool`, `order`, …) |
+| `agent-by-name` | — | `LC_NAME` (req) | JSON `{ query, match, candidates }` object — resolves an agent name to its `id` |
 | `tasks-list` | `<effortId>` | `LC_INCLUDE_ARCHIVED=true` | JSON array of task-summary records (existing tasks, e.g. to reference as blockers) |
 | `task-create` | `<effortId>` | `LC_NAME` (req), `LC_NOTES`, `LC_PARENT_ID`, `LC_DUE_DATE` (ISO) | JSON created task record |
-| `task-update` | `<taskId>` | `LC_NAME`, `LC_NOTES`, `LC_STATUS`, `LC_WORKER`, `LC_WORKER_LABEL`, `LC_BLOCKERS` (comma-sep ids), `LC_CLEAR_BLOCKERS=true`, `LC_DUE_DATE` (ISO) | JSON updated task record |
+| `task-update` | `<taskId>` | `LC_NAME`, `LC_NOTES`, `LC_STATUS`, `LC_WORKER`, `LC_WORKER_LABEL`, `LC_AGENT_ID`, `LC_BLOCKERS` (comma-sep ids), `LC_CLEAR_BLOCKERS=true`, `LC_DUE_DATE` (ISO) | JSON updated task record |
 | `workspace-path` | `<effortId>` | — | JSON string path, or literal `null` |
 
 - Statuses: `open`, `in_progress`, `blocked`, `completed`.
-- Workers: `none`, `human`, `agent` (+ `worker_label`, e.g. `zcode`).
-- `effort-by-name` / `template-by-name` match the record's own `name`
-  case-insensitively, exact first then substring; `match` is `null` on zero or
-  ambiguous matches.
+- Workers: `none`, `human`, `agent`. An agent task carries its identity in
+  `agent_id` (the agent definition's UUID); `worker_label` is **human-only as
+  of 0.3.3** — to assign a task to a defined agent, set `worker` to `agent`
+  and `agent_id` to the agent's id (resolved from its name via `agents-list` /
+  `agent-by-name`). Do not use `worker_label` for agent tasks.
+- `effort-by-name` / `template-by-name` / `agent-by-name` match the record's
+  own `name` case-insensitively, exact first then substring; `match` is `null`
+  on zero or ambiguous matches.
 - `create task` has **no `worker` param** — a new task defaults to
   `worker=none`. Apply an assignment afterwards via `task-update`
-  (`LC_WORKER=agent LC_WORKER_LABEL=…`).
+  (`LC_WORKER=agent LC_AGENT_ID=…`).
 - `task-update` **`LC_BLOCKERS`** is a comma-separated list of task ids
   (`"id1,id2"`). Entering Blocked **requires** blockers — send
   `LC_STATUS=blocked` **and** `LC_BLOCKERS=<ids>` in the **same** call.
@@ -235,15 +244,29 @@ LC_NAME='<task name>' \
 `create task` cannot set a worker or a Blocked state — do those with
 `task-update` after the task exists.
 
-**Assign a task** (worker kind + label):
+**Assign a task to a defined agent.** When the template's prompt assigns a
+task to an agent by name, resolve that name to the agent's id first, then claim
+the task for that agent by id (the modern wire — `worker label` is human-only
+as of 0.3.3 and is ignored for agent tasks):
 
 ```bash
-LC_STATUS=in_progress LC_WORKER=agent LC_WORKER_LABEL='zcode' \
+# 1. Resolve the agent name (as written in the template) to exactly one agent.
+LC_NAME='<agent name>' osascript -l JavaScript "$LC_JS" agent-by-name
+#   match is an object → use its id. match is null with candidates → list them
+#   and ask which agent the prompt means (names are case-insensitively unique,
+#   so an exact name hit is the normal case). agents-list returns every agent
+#   if you need the full set.
+
+# 2. Claim the task for that agent by id.
+LC_WORKER=agent LC_AGENT_ID='<agent id>' \
+  [LC_STATUS=in_progress] \
   osascript -l JavaScript "$LC_JS" task-update "$TASK_ID"
 ```
 
-(`LC_STATUS` is optional; set it only when the prompt implies the task should
-start somewhere other than the default `open`.)
+`LC_STATUS` is optional — set it only when the prompt implies the task should
+start somewhere other than the default `open`. **Assign a human** instead with
+`LC_WORKER=human LC_WORKER_LABEL='<label>'` (the only valid use of
+`worker_label`).
 
 **Block a task — set status and blockers TOGETHER in one call.** Entering
 Blocked requires ≥1 blocker; the app rejects `status=blocked` with no

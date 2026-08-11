@@ -5,12 +5,15 @@
  * A focused subset of the LocalCortex AppleScript surface (see
  * LocalCortex.sdef in the LocalCortex---Swift repo) covering exactly the
  * operations a "materialize a template's tasks into an Effort" run needs:
- * `list efforts`, `list templates`, `list tasks`, `workspace path`,
- * `create task`, `update task`. The composites `effort-by-name` and
- * `template-by-name` are client-side filters built on top of the list
- * commands — the app has no name-search of its own. `task-update` carries the
- * `blockers` list (sdef `blockers` param) so a Blocked state and its blocker
- * ids can be set in the same call, the way the app requires it.
+ * `list efforts`, `list templates`, `list tasks`, `list agents`,
+ * `workspace path`, `create task`, `update task`. The composites
+ * `effort-by-name`, `template-by-name`, and `agent-by-name` are client-side
+ * filters built on top of the list commands — the app has no name-search of
+ * its own. `task-update` carries the `blockers` list (sdef `blockers` param)
+ * so a Blocked state and its blocker ids can be set in the same call, the way
+ * the app requires it, and the `agent id` param (sdef `agent id`) so a created
+ * task can be claimed for a defined agent by id — the modern wire, since
+ * `worker label` became human-only in 0.3.3.
  *
  * Free-text inputs (effort name, template name, task name, notes, blocker ids)
  * are passed via environment variables and read here with NSProcessInfo —
@@ -135,6 +138,28 @@ function run() {
       result = JSON.stringify({ query: name, match: found.match, candidates: found.candidates });
       break;
     }
+    case "agents-list": {
+      // listAgents returns the app's JSON-string result verbatim — a JSON
+      // array of agent definition records (id, name, model, thinking_effort,
+      // tool, order, created_at, updated_at). Read-only on this surface; used
+      // to resolve an agent name mentioned in a template to its id so a
+      // created task can be claimed for that defined agent via the `agent id`
+      // param on task-update.
+      result = app.listAgents();
+      break;
+    }
+    case "agent-by-name": {
+      const name = envStr("LC_NAME");
+      if (!name) throw new Error("LC_NAME is required for agent-by-name");
+      // listAgents returns the app's JSON-string result; parse to filter by
+      // name, then re-stringify the composite object below. Same exact/then-
+      // substring matching as effort-by-name / template-by-name.
+      const raw = app.listAgents();
+      const agents = JSON.parse(raw);
+      const found = findByName(agents, name);
+      result = JSON.stringify({ query: name, match: found.match, candidates: found.candidates });
+      break;
+    }
     case "tasks-list": {
       // Raw listTasks — every task in the effort (completed tasks included;
       // only archived is filterable). Used to collect ids of existing tasks
@@ -181,9 +206,14 @@ function run() {
     }
     case "task-update": {
       // updateTask sdef takes task id (argv) + any subset of name / notes /
-      // status / due date / worker / worker label / blockers. Only keys that
-      // were provided are forwarded; absent keys are left unchanged on the
-      // app side.
+      // status / due date / worker / worker label / agent id / blockers. Only
+      // keys that were provided are forwarded; absent keys are left unchanged
+      // on the app side.
+      //
+      // For assigning an app-defined agent, the modern wire is
+      // `LC_WORKER=agent` + `LC_AGENT_ID=<id>` (resolved from the agent name
+      // via agent-by-name / agents-list). `worker label` is human-only as of
+      // 0.3.3 and is ignored for worker agent; prefer the agent id path.
       //
       // `blockers` is a list of task-id text on the app side. Entering
       // Blocked REQUIRES blockers — the caller must send LC_STATUS=blocked
@@ -204,6 +234,8 @@ function run() {
       if (worker !== undefined) opts.worker = worker;
       const workerLabel = envOpt("LC_WORKER_LABEL");
       if (workerLabel !== undefined) opts.workerLabel = workerLabel;
+      const agentId = envOpt("LC_AGENT_ID");
+      if (agentId !== undefined) opts.agentId = agentId;
       const dueDate = envOpt("LC_DUE_DATE");
       if (dueDate !== undefined) opts.dueDate = dueDate;
       const blockers = parseBlockerList(envOpt("LC_BLOCKERS"));
@@ -218,8 +250,9 @@ function run() {
     default:
       throw new Error(
         "unknown subcommand: '" + cmd + "'. Expected one of: " +
-          "effort-by-name, templates-list, template-by-name, tasks-list, " +
-          "tasks-get, workspace-path, task-create, task-update."
+          "effort-by-name, templates-list, template-by-name, agents-list, " +
+          "agent-by-name, tasks-list, tasks-get, workspace-path, " +
+          "task-create, task-update."
       );
   }
 
