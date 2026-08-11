@@ -6,35 +6,36 @@ required.
 
 ## Skills
 
+- **`lc-create-from-template`** (`/skill:lc-create-from-template`) — populate a
+  named Effort with tasks materialized from a named task Template's prompt.
+  Resolves the effort and template by name, reads the template's free-text
+  prompt, interprets it, and creates the described tasks (roots and subtasks)
+  in the effort, then applies assignments and Blocked / blocker relationships
+  on top (status and blockers set together in one update). Does not work or
+  complete tasks; it only creates them. See
+  [`skills/lc-create-from-template/SKILL.md`](skills/lc-create-from-template/SKILL.md).
 - **`lc-fetch-effort`** (`/skill:lc-fetch-effort`) — look up a single Effort by
   name and return its id, workspace folder name, and on-disk workspace path.
   Read-only; resolves exact-then-substring (case-insensitive), asks for
   disambiguation on several matches, and never touches tasks. See
   [`skills/lc-fetch-effort/SKILL.md`](skills/lc-fetch-effort/SKILL.md).
-- **`lc-fetch-agent-task`** (`/skill:lc-fetch-agent-task`) — find the active
-  tasks assigned to a specific agent (`worker_label`, e.g. `kimi`) inside a
-  given Effort. Read-only; matches `worker: agent` + label case-insensitively,
-  and never modifies tasks. See
-  [`skills/lc-fetch-agent-task/SKILL.md`](skills/lc-fetch-agent-task/SKILL.md).
-- **`lc-complete-task`** (`/skill:lc-complete-task`) — complete (default) or
-  reopen a LocalCortex task by id. Completing also completes the subtask
-  subtree, auto-unblocks tasks waiting on it, and spawns a fresh open copy if
-  the task carries a recurrence rule. Only the completion transition lives
-  here; it does not create, rename, re-date, or delete tasks. See
-  [`skills/lc-complete-task/SKILL.md`](skills/lc-complete-task/SKILL.md).
-- **`lc-start-job`** (`/skill:lc-start-job`) — set up a recurring autonomous
-  worker that, every 5 minutes, polls a named Effort for an **open** task
-  assigned to a given agent (`worker_label`, e.g. `kimi`), does that task's
-  work, writes artifacts into the effort's workspace folder, and completes it.
-  Validates the effort + agent label at setup, then creates a Kimi Code cron
-  job; the scheduled run is self-contained and does not chain sibling skills.
-  See [`skills/lc-start-job/SKILL.md`](skills/lc-start-job/SKILL.md).
+- **`lc-orchestrate-agents`** (`/skill:lc-orchestrate-agents`) — set up a
+  recurring Kimi Code cron job that, every 5 minutes, checks a named Effort
+  for open tasks assigned to each supported agent defined in the LocalCortex
+  app and — for every agent that has an open task — spawns that agent's CLI
+  (opencode / kimi) headless to do the work via `lc-start-work`. The agent
+  roster, model, and thinking effort are read from the app (`list agents`)
+  and re-read every tick; when no agent has any active task left, the tick
+  creates a single dedup'd reminder task telling the user to delete the cron
+  job. See
+  [`skills/lc-orchestrate-agents/SKILL.md`](skills/lc-orchestrate-agents/SKILL.md).
 - **`lc-start-work`** (`/skill:lc-start-work`) — run **one** autonomous
-  pull-work-and-complete tick on demand: find the next **open** task assigned
-  to a given agent inside a named Effort, claim it, do the work, write
-  artifacts into the effort's workspace folder, and complete it — then stop.
-  This is the same flow each scheduled tick of `lc-start-job` runs, invoked
-  once; it creates no cron job. See
+  work-one-task-and-complete tick on demand: verify a caller-chosen **task id**
+  lives in a named Effort and is `open`, claim it, do the work, write artifacts
+  into the effort's workspace folder, and complete it — then stop. It does not
+  look tasks up by agent; it works exactly the task id it is handed (each
+  worker spawned by `lc-orchestrate-agents` runs this flow). It creates no
+  cron job. See
   [`skills/lc-start-work/SKILL.md`](skills/lc-start-work/SKILL.md).
 
 ## Requirements
@@ -64,16 +65,13 @@ localcortex/
 ├── kimi.plugin.json                    # plugin manifest
 ├── README.md                           # this file
 └── skills/
-    ├── lc-fetch-effort/
+    ├── lc-create-from-template/
     │   ├── SKILL.md
     │   └── scripts/lc.js               # each skill bundles its own copy
-    ├── lc-fetch-agent-task/
+    ├── lc-fetch-effort/
     │   ├── SKILL.md
     │   └── scripts/lc.js
-    ├── lc-complete-task/
-    │   ├── SKILL.md
-    │   └── scripts/lc.js
-    ├── lc-start-job/
+    ├── lc-orchestrate-agents/
     │   ├── SKILL.md
     │   └── scripts/lc.js
     └── lc-start-work/

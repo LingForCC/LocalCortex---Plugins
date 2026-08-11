@@ -9,9 +9,9 @@ parity with its MCP tools; this plugin wraps them.
 
 ## Plugin
 
-- **`localcortex`** → skills **`lc-fetch-effort`**, **`lc-fetch-agent-task`**,
-  **`lc-complete-task`**, **`lc-start-job`**, and **`lc-start-work`**. See
-  [`plugins/localcortex/README.md`](plugins/localcortex/README.md).
+- **`localcortex`** → skills **`lc-create-from-template`**,
+  **`lc-fetch-effort`**, **`lc-orchestrate-agents`**, and **`lc-start-work`**.
+  See [`plugins/localcortex/README.md`](plugins/localcortex/README.md).
 
 ## Requirements
 
@@ -64,16 +64,13 @@ kimi-plugin/
         ├── kimi.plugin.json       # plugin manifest
         ├── README.md
         └── skills/
+            ├── lc-create-from-template/
+            │   ├── SKILL.md
+            │   └── scripts/lc.js
             ├── lc-fetch-effort/
             │   ├── SKILL.md
             │   └── scripts/lc.js
-            ├── lc-fetch-agent-task/
-            │   ├── SKILL.md
-            │   └── scripts/lc.js
-            ├── lc-complete-task/
-            │   ├── SKILL.md
-            │   └── scripts/lc.js
-            ├── lc-start-job/
+            ├── lc-orchestrate-agents/
             │   ├── SKILL.md
             │   └── scripts/lc.js
             └── lc-start-work/

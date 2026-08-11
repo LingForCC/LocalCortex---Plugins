@@ -2,42 +2,43 @@
 name: lc-start-work
 description: >-
   Do one task's worth of work on a named LocalCortex Effort — the macOS task
-  manager app — on demand, for a given agent. Finds the next open task assigned
-  to that agent (matched by agent_id for app-defined agents, or worker_label as
-  a legacy fallback), claims it, does the work, writes artifacts into the
-  effort's workspace folder, and completes it — one task, then stops. The agent
-  may be given by id (preferred) or by name/label; a name is resolved to an id
-  via the app's list agents. Drives LocalCortex through its JXA/AppleScript
-  surface (osascript), not MCP. Use whenever the user wants to run a single
-  autonomous pull-work-and-complete tick right now without setting up a
-  recurring schedule — e.g. "work one kimi task on Build", "have the agent
-  pick up the next open task on Payments and do it". This is the same flow each
-  scheduled tick of lc-start-job runs, just invoked once. Does not create a
-  Kimi Code cron job and does not chain sibling skills.
+  manager app — on demand, for a given task id. Verifies the task exists in the
+  effort, claims it, does the work, writes artifacts into the effort's
+  workspace folder, and completes it — one task, then stops. It does NOT look
+  tasks up by agent and does not care which agent (if any) the task is
+  assigned to; it works exactly the task id it is handed. Drives LocalCortex
+  through its JXA/AppleScript surface (osascript), not MCP. Use whenever the
+  caller wants a single autonomous work-one-task-and-complete tick right now
+  without setting up a recurring schedule — e.g. the lc-orchestrate-agents
+  tick hands each spawned worker a specific task id to work. This is the same
+  flow each scheduled tick of lc-start-job runs, just invoked once. Does not
+  create a Kimi Code cron job and does not chain sibling skills.
 whenToUse: >-
-  When the user wants one autonomous "pull the next open task for this agent
-  and do it" tick right now against a named LocalCortex Effort, without
-  setting up a recurring schedule.
-arguments: effort agent
+  When the user wants one autonomous "work this specific task and complete it"
+  tick right now against a named LocalCortex Effort — given a concrete task id
+  — without setting up a recurring schedule.
+arguments: effort task
 ---
 
-# lc-start-work — one autonomous pull-work-and-complete tick, on demand
+# lc-start-work — work one caller-chosen task, on demand
 
-Find the next **open** task assigned to a given **agent** inside a named
-**Effort**, claim it, do that task's work, write any artifacts into the
-Effort's workspace folder, and complete it — then stop. Work **only one task**
-per invocation. This is exactly the flow each scheduled tick of `lc-start-job`
-runs; the difference is this skill runs it **once, right now**, instead of on a
-recurring 5-minute schedule, and it does **not** create a Kimi Code cron job.
+Work a **specific task** (given by id) inside a named **Effort**: verify the
+task exists in that effort, claim it, do its work, write any artifacts into
+the Effort's workspace folder, and complete it — then stop. Work **only one
+task** per invocation. This is exactly the flow each scheduled tick of
+`lc-start-job` runs, and exactly what each worker spawned by
+`lc-orchestrate-agents` runs; the difference is this skill runs it **once,
+right now**, and does **not** create a Kimi Code cron job.
 
 The user provides the two inputs:
 
-- **Effort name** — the Effort to look in (resolved to an id by name).
-- **Agent** — the agent that owns the tasks, given as an **agent id**
-  (preferred for app-defined agents — the UUID from `list agents`) **or** an
-  agent name/label (legacy). If the user gives a name, resolve it to an id via
-  `agents-list` (see [Step 1](#step-1--confirm-the-two-inputs)). This is **not**
-  the literal string "agent".
+- **Effort name** — the Effort the task lives in (resolved to an id by name).
+- **Task id** — the UUID of the task to work. This is the task the caller
+  already chose (e.g. the orchestrator tick picks one open task per agent and
+  hands its id here). This skill does **not** scan for an open task itself and
+  does **not** care which agent (if any) the task is assigned to — it works
+  whatever task id it is given, after confirming it belongs to the named
+  effort.
 
 Drive LocalCortex **exclusively through its JXA/AppleScript surface** via the
 bundled `lc.js` helper — never use `mcp__localcortex__*` tools in this skill's
@@ -45,33 +46,33 @@ flow.
 
 ## When to use this skill
 
-When the user wants to run **one** autonomous "pull the next open task for this
-agent and do it" tick **right now**, against a named Effort, **without** setting
-up a recurring schedule. Examples: "work one kimi task on Build", "have the
-agent pick up the next open task on Payments and do it", "do one tick of work
-on the Launch effort for kimi".
+When the caller wants to run **one** autonomous "work this specific task and
+complete it" tick **right now**, against a named Effort, **without** setting up
+a recurring schedule. Examples: "work task `<id>` on Build", "do one tick of
+work on task `<id>` under the Launch effort". The `lc-orchestrate-agents` tick
+hands each spawned worker one of these prompts with a concrete task id.
 
 ## When NOT to use this skill
 
 - The user wants this to keep happening **unattended on a schedule** (every 5
   minutes) → use `lc-start-job`, which sets up a recurring cron job.
-- The user points at a **specific task** by id or name and wants to work on
-  *that* one → this skill picks the next open task itself; it is not for a
-  caller-chosen task.
+- The user wants to pick the next open task **by agent** (i.e. "find an open
+  task for agent X and do it") → that selection now lives in
+  `lc-orchestrate-agents`'s tick; this skill only works a caller-chosen task.
 - The user only wants to **look up** an effort → use `lc-fetch-effort`.
 - The user only wants to **look up** an agent's tasks → use
   `lc-fetch-agent-task`.
 - The user wants to **complete a known task** → use `lc-complete-task`.
-- There is no Effort and no agent in view → don't invent either. Ask.
+- There is no Effort and no task id in view → don't invent either. Ask.
 
 ## Prerequisites
 
 - The **LocalCortex** macOS app is installed and built with the AppleScript/JXA
-  surface (sdef commands used: `list efforts`, `list tasks`, `list agents`,
-  `get task`, `update task`, `complete task`, `workspace path`). Apple Events
-  auto-launch the app if it isn't running — no "is the server up" check needed.
-- The **first call from the Kimi Code host binary triggers a one-time macOS
-  TCC prompt** ("*… wants to control LocalCortex*"). After the user grants it,
+  surface (sdef commands used: `list efforts`, `get task`, `update task`,
+  `complete task`, `workspace path`). Apple Events auto-launch the app if it
+  isn't running — no "is the server up" check needed.
+- The **first call from the Kimi Code host binary triggers a one-time macOS TCC
+  prompt** ("*… wants to control LocalCortex*"). After the user grants it,
   subsequent calls are silent. Tell the user to expect this prompt the first
   time; it is a per-sender grant, not per-call.
 - The app's scripting name is `LocalCortex`.
@@ -95,9 +96,9 @@ fi
 ```
 
 Every command below is invoked the same way. **Always pass free text (effort
-name, agent label, notes) via env vars**, never inline in argv — env vars are
-safe for quotes, newlines, backticks, and `$`. UUIDs and the subcommand go in
-argv.
+name, notes) via env vars**, never inline in argv — env vars are safe for
+quotes, newlines, backticks, and `$`. UUIDs (task id, effort id) and the
+subcommand go in argv.
 
 ```bash
 osascript -l JavaScript "$LC_JS" <subcommand> [positional args]
@@ -106,37 +107,28 @@ osascript -l JavaScript "$LC_JS" <subcommand> [positional args]
 ## Command reference
 
 The helper prints the app's JSON-string result to stdout — `JSON.parse` it (or
-read the JSON directly). `effort-by-name` and `tasks-by-agent` are client-side
-composites (the app has no name/worker-search of its own); the rest map 1:1 to
-sdef commands.
+read the JSON directly). `effort-by-name` is a client-side composite (the app
+has no name-search of its own); the rest map 1:1 to sdef commands.
 
 | subcommand | argv | env vars | returns |
 |---|---|---|---|
 | `effort-by-name` | — | `LC_NAME` (req), `LC_INCLUDE_ARCHIVED=true` | JSON `{ query, match, candidates }` object |
-| `tasks-by-agent` | `<effortId>` | `LC_AGENT_ID` (preferred) **or** `LC_AGENT_LABEL` (legacy; req one), `LC_INCLUDE_COMPLETED=true`, `LC_INCLUDE_ARCHIVED=true` | JSON `{ query, count, tasks }` object |
-| `tasks-get` | `<taskId>` | — | JSON task record **with `notes`** |
+| `tasks-get` | `<taskId>` | — | JSON task record **with `notes`** (or not_found `-1002` if the id is unknown) |
 | `task-update` | `<taskId>` | `LC_NAME`, `LC_NOTES`, `LC_STATUS`, `LC_WORKER`, `LC_WORKER_LABEL` | JSON updated task |
 | `workspace-path` | `<effortId>` | — | JSON string path, or literal `null` |
 | `task-complete` | `<taskId>` | `LC_COMPLETED=false` (default `true`) | JSON task record |
-| `agents-list` | — | — | JSON array of **every** agent definition (`id`, `name`, `tool`, `model`, `thinking_effort`, `order`, `created_at`, `updated_at`) |
 
 - Statuses: `open`, `in_progress`, `blocked`, `completed`.
-- Workers: `none`, `human`, `agent`. An agent task carries its identity in
-  `agent_id` (the agent definition's UUID); `worker_label` is human-only and
-  empty for agent tasks.
+- Workers: `none`, `human`, `agent`. This skill does not filter on `worker` —
+  it works the task id it is given regardless of who owns it. An agent task
+  carries its identity in `agent_id`; `worker_label` is human-only and empty
+  for agent tasks.
 - `effort-by-name` matches the effort's own `name` case-insensitively, exact
   first then substring; `match` is `null` on zero or ambiguous matches.
-- `tasks-by-agent` matches tasks whose `worker` is `"agent"`. When `LC_AGENT_ID`
-  is set it filters by `agent_id` (exact UUID match; orphaned agent tasks whose
-  `agent_id` is null never match). Otherwise it falls back to a
-  case-insensitive `worker_label` match via `LC_AGENT_LABEL`. `LC_AGENT_ID`
-  takes precedence when both are set. By default only **active** tasks (`open`,
-  `in_progress`, `blocked`) are returned.
-- `agents-list` is the raw `list agents` view: every agent definition the app
-  knows about. Use it to resolve an agent name to its `id`.
 - On this surface, **nil optional fields are explicit JSON `null`** (e.g.
   `parent_id`, `notes`, `due_date`, `completed_at`, `agent_id`). `has_notes`,
-  `is_archived`, `worker`, `worker_label`, `status` are always present.
+  `is_archived`, `worker`, `worker_label`, `status`, `effort_id` are always
+  present.
 
 ### Errors
 
@@ -152,7 +144,7 @@ App-level error numbers (from LocalCortex):
 |---|---|
 | `-2700` | App not found / not scriptable — install or rebuild LocalCortex. Also the number osascript itself uses for a thrown helper error. |
 | `-1001` | validation — bad UUID/enum or missing required param; for `task-complete`, most commonly an incomplete blocker ("Cannot complete — blocked by …"). |
-| `-1002` | not_found — unknown effort/task |
+| `-1002` | not_found — unknown effort/task. `tasks-get` on an unknown task id returns this. |
 | `-1003` | conflict — conflicting state |
 
 ---
@@ -161,29 +153,15 @@ App-level error numbers (from LocalCortex):
 
 ### Step 1 — Confirm the two inputs
 
-The run is defined by two things the user must provide:
+The run is defined by two things the caller must provide:
 
-- **Effort name** — the Effort to look in (resolved to an id by name).
-- **Agent** — the agent that owns the tasks. **Preferred: an agent id** (the
-  UUID from the app's `list agents` — this is what app-defined agents set on
-  their tasks via `agent_id`). **Fallback: an agent name or label** (legacy
-  `worker_label` matching). This is **not** the literal string "agent".
+- **Effort name** — the Effort the task lives in (resolved to an id by name).
+- **Task id** — the UUID of the task to work.
 
-If the user gives an **agent id**, use it directly as `LC_AGENT_ID`. If they
-give a **name** (or a label that may be an agent's name), resolve it to an id:
-
-```bash
-osascript -l JavaScript "$LC_JS" agents-list
-```
-
-Pick the agent record whose `name` matches (case-insensitive, exact first). If
-exactly one matches, use its `id` as `LC_AGENT_ID`. If zero or multiple match,
-**do not guess** — list the candidates (name + id + tool) and ask the user
-which one they mean. (If no `list agents` match is found and the input looks
-like a legacy free-text label, fall back to `LC_AGENT_LABEL` matching instead.)
-
-If either the effort name or the agent is missing or ambiguous, **ask** before
-doing anything else. Do not invent an effort or guess an agent.
+If either is missing, **ask** before doing anything else. Do not invent an
+effort or guess a task id. (This skill does not resolve "an open task for
+agent X" — the caller picks the task; if the caller means to pick by agent,
+that is `lc-orchestrate-agents`'s job, not this skill's.)
 
 ### Step 2 — Resolve the effort to exactly one match
 
@@ -199,72 +177,50 @@ LC_NAME='<effort name>' osascript -l JavaScript "$LC_JS" effort-by-name
 - both `null` → tell the user no effort matched. Retry with
   `LC_INCLUDE_ARCHIVED=true` if it may be archived; otherwise stop.
 
-### Step 3 — Find an open task for the agent
+### Step 3 — Fetch the task by id and verify it is workable
 
-Prefer the **agent id** path (correct for app-defined agents, whose tasks carry
-identity in `agent_id`); fall back to the label path only when no id was
-resolved:
-
-```bash
-# agent id path (preferred)
-LC_AGENT_ID='<agent id>' \
-  osascript -l JavaScript "$LC_JS" tasks-by-agent "$EFFORT_ID"
-
-# legacy label path (fallback)
-LC_AGENT_LABEL='<agent label>' \
-  osascript -l JavaScript "$LC_JS" tasks-by-agent "$EFFORT_ID"
-```
-
-This returns `{ query, count, tasks }` of the agent's **active** tasks. Select
-the first one whose `status` is `"open"` (sort by `order`, then `created_at`).
-If there is no `open` task — `count` is 0 or every task is `in_progress` /
-`blocked` — **there is nothing to do; stop here.** Tell the user there were no
-open tasks for that agent (a `count` of 0 is not an error, just "nothing to do
-right now"). Do not touch a task another worker already started
-(`in_progress`); it is not yours.
-
-A `count` of 0 may also mean the agent id/label is wrong — if it is 0, mention
-the id/label you used so the user can confirm it was correct.
-
-### Step 4 — Claim the task, then re-read to confirm
-
-Claim the chosen task before doing any work. The claim differs by how the agent
-was identified:
-
-- **Agent id path (preferred):** the task is already assigned to this agent
-  (its `agent_id` is already set by whoever created/claimed it). Claiming only
-  flips the status — do **not** set `worker` or `worker_label` (that would
-  clobber the existing assignment and blank the agent identity):
-
-  ```bash
-  LC_STATUS=in_progress \
-    osascript -l JavaScript "$LC_JS" task-update "$TASK_ID"
-  ```
-
-  Then re-read it and confirm `status` is `in_progress` **and** `agent_id` is
-  still this agent's id (unchanged).
-
-- **Legacy label path:** set `worker` to `agent` and `worker_label` to the
-  label, in addition to the status:
-
-  ```bash
-  LC_STATUS=in_progress LC_WORKER=agent LC_WORKER_LABEL='<agent label>' \
-    osascript -l JavaScript "$LC_JS" task-update "$TASK_ID"
-  ```
-
-  Then re-read it and confirm `worker` is `agent` **and** `worker_label` is the
-  agent label.
-
-If the claim did not take (another worker holds it, or the task moved), **stop**
-— do not work a task you do not own.
-
-### Step 5 — Read the task and do the work
+Fetch the task record (with notes) by its id:
 
 ```bash
 osascript -l JavaScript "$LC_JS" tasks-get "$TASK_ID"
 ```
 
-The returned record's `name` (the title) and `notes` describe the work. The
+- **Non-zero exit with `-1002`** → the task id does not exist. Tell the user
+  the task id was not found and **stop.** Do not claim or work anything.
+- **Success** → `JSON.parse` the record and verify:
+  - **It belongs to this effort** — `task.effort_id` must equal the effort id
+    from Step 2. If it does not, the task is in a different effort: tell the
+    user and **stop.** (This is the "check the task id exists [in this
+    effort]" gate.)
+  - **It is actionable** — `task.status` must be `"open"`. If it is
+    `in_progress` (another worker already started it), `completed` (already
+    done), or `blocked` (it has incomplete blockers), **do not touch it** —
+    tell the user the task is not open and stop. Only an `open` task is
+    claimed and worked.
+
+Keep the parsed task record; its `name` (title) and `notes` (instructions)
+are the work to do in Step 5.
+
+### Step 4 — Claim the task, then re-read to confirm
+
+Claim the task before doing any work. Claiming only flips the status — do
+**not** set `worker`, `worker_label`, or `agent_id`; the task keeps whatever
+assignment it already has (this skill does not care who owns it, and must not
+clobber an existing agent assignment):
+
+```bash
+LC_STATUS=in_progress \
+  osascript -l JavaScript "$LC_JS" task-update "$TASK_ID"
+```
+
+Then re-read it (`tasks-get "$TASK_ID"`) and confirm `status` is now
+`in_progress`. If the claim did not take (another worker holds it, or the task
+moved to `completed` / `blocked` between Step 3 and now), **stop** — do not
+work a task you do not own.
+
+### Step 5 — Do the work
+
+The task record's `name` (the title) and `notes` describe the work. The
 `notes` are the instructions; the `name` is the summary.
 
 **Resolve the Effort's workspace folder once and read relevant context from it
@@ -316,9 +272,9 @@ it up once the blocker is resolved.
 
 ### Step 7 — One task, then stop
 
-After completing one task, **stop**. Do not loop to the next open task in the
-same invocation — if the user wants more, they can invoke this skill again, or
-use `lc-start-job` for a recurring worker. Report what you did.
+After completing one task, **stop**. Do not loop to another task in the same
+invocation — if the caller wants more, it can invoke this skill again (with a
+new task id), or use `lc-start-job` for a recurring worker. Report what you did.
 
 ## Notes for the run
 
@@ -326,9 +282,9 @@ use `lc-start-job` for a recurring worker. Report what you did.
   *can* ask the user if something in the task notes is genuinely ambiguous —
   but prefer to make the most reasonable interpretation, do the work, and
   record your interpretation in the task notes. Do not block on trivia.
-- **Do not create follow-up tasks.** This run completes the open task it picked
-  up; it does not create follow-up siblings. If a task clearly needs
-  follow-up, say so in the task notes and leave it at that.
+- **Do not create follow-up tasks.** This run completes the task it was handed;
+  it does not create follow-up siblings. If a task clearly needs follow-up, say
+  so in the task notes and leave it at that.
 - **Fail safe.** If the run errors mid-work after the task was claimed, leave
   the task `in_progress` and stop — do not complete a task whose work did not
   finish. Tell the user so they (or another run) can pick it up.
@@ -337,9 +293,9 @@ use `lc-start-job` for a recurring worker. Report what you did.
 
 ## Reporting to the user
 
-Report plainly: the effort (name + id), the agent (id + name, or label on the
-legacy path), and the outcome — which task you worked and completed (title +
-id + a one-line summary of what you did), or that there was no open task for
-that agent. If you could not complete the task (e.g. an incomplete blocker),
-say so and leave it `in_progress`. No cron job is created by this skill, so
-there is nothing to "stop".
+Report plainly: the effort (name + id), the task (title + id), and the
+outcome — that you worked and completed it (a one-line summary of what you
+did), or that you could not (the task id was not found, was not in this
+effort, was not open, or could not be completed e.g. due to an incomplete
+blocker — in which case it is left `in_progress`). No cron job is created
+by this skill, so there is nothing to "stop".
