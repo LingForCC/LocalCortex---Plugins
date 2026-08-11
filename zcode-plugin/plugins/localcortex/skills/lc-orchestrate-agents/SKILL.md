@@ -4,7 +4,7 @@ description: >-
   Set up a recurring LocalCortex multi-agent orchestrator — the macOS task
   manager app — that polls a named Effort every 5 minutes and, for each agent
   definition in the app that has an open task, spawns that agent's CLI
-  (opencode, kimi, or zcode) headless to do the work. The agent roster, model,
+  (opencode or kimi) headless to do the work. The agent roster, model,
   and thinking effort are READ FROM THE APP (its `list agents` definitions) —
   the user never supplies them; each agent's `tool` selects the CLI, its
   `model` is the model, its `thinking_effort` is the effort. Each tick
@@ -17,7 +17,7 @@ description: >-
   delegation — e.g. "orchestrate all my agents on Build".
 argument-hint: "[effort name]"
 allowed-tools: [Bash, Read]
-version: 0.1.17
+version: 0.1.18
 license: MIT
 ---
 
@@ -34,7 +34,7 @@ the task work itself.
 The **agent roster is read from the app**, not supplied by the user. At setup
 the user provides only the **Effort name** and a **working directory**; the
 skill calls the app's `list agents` command, and for each agent definition maps
-its free-text `tool` to one of the supported CLIs (opencode / kimi / zcode),
+its free-text `tool` to one of the supported CLIs (opencode / kimi),
 then uses that agent's `model` and `thinking_effort` as the spawn parameters.
 Supported agents (those whose `tool` maps to a known CLI) become the roster;
 everything else is skipped and reported. **If agent info cannot be read from
@@ -70,15 +70,13 @@ This skill does **not** ask the user for agents, models, or efforts. It reads
   |---|---|
   | `opencode` | `opencode` |
   | `kimi` | `kimi` |
-  | `zcode` | `zcode` |
-  | anything else (e.g. `codex`, `claude code`) | **unsupported — skipped** |
+  | anything else (e.g. `codex`, `claude code`, `zcode`) | **unsupported — skipped** |
 
-  So `"opencode"`, `"kimi code"`, and `"ZCode"` all map correctly; `"codex"`
-  and `"claude code"` are skipped (no spawnable headless CLI is known for them
+  So `"opencode"` and `"kimi code"` map correctly; `"codex"`, `"zcode"`, and
+  `"claude code"` are skipped (no spawnable headless CLI is known for them
   here).
 - **`model`** and **`thinking_effort`** are applied to opencode and kimi
-  spawns. For zcode they are recorded for reporting but **cannot be applied
-  headless** (see [Model & thinking-effort support](#model--thinking-effort-support-read-this-first)).
+  spawns (see [Model & thinking-effort support](#model--thinking-effort-support-read-this-first)).
 
 Each agent's **tasks** are matched by **`agent_id`** (the agent record's `id`
 UUID), not by `worker_label`. As of the app's agent-worker feature, an
@@ -91,19 +89,14 @@ id it is given).
 
 ## Model & thinking-effort support (read this first)
 
-The headless CLIs do **not** expose model and thinking-effort selection equally.
+The headless CLIs expose model and thinking-effort selection via flags / env.
 Each agent's `model` / `thinking_effort` (read from the app) is applied to
-opencode and kimi; for **zcode** they are **recorded but cannot be honored
-headless** — at setup you must warn the user that any zcode agent will run at
-whatever model its TUI currently has selected, and that thinking effort has no
-headless mechanism at all. Still spawn zcode; just don't pretend the setting
-took effect.
+opencode and kimi.
 
 | agent type (from `tool`) | model (headless) | thinking effort (headless) |
 |---|---|---|
 | **opencode** | ✅ `-m <provider/model>` | ✅ `--variant <effort>` |
 | **kimi** | ✅ `-m <alias>` | ✅ env `KIMI_MODEL_THINKING_EFFORT=<low\|medium\|high\|max>` |
-| **zcode** | ❌ no flag — model is TUI-only (`/model`) | ❌ no flag, no env, no config key |
 
 ## When to use this skill
 
@@ -156,11 +149,11 @@ This skill does **two things**:
   until they delete it.
 - **At least one supported agent is defined in the app.** Agents are created in
   the app's Settings (or via `create agent`); each agent's `tool` must map to
-  one of the supported CLIs (opencode / kimi / zcode). If no agent is defined,
+  one of the supported CLIs (opencode / kimi). If no agent is defined,
   or none maps to a supported CLI, the skill does nothing and tells the user.
 - **The spawned worker CLIs are installed and logged in.** Workers run headless,
   so they cannot prompt for login mid-run. Each supported agent has its own
-  one-time login: `zcode login`, `kimi login`, `opencode auth login`. Tell the
+  one-time login: `kimi login`, `opencode auth login`. Tell the
   user to run the relevant logins once before relying on this automation.
 - **The `lc-start-work` skill is installed** for every spawned agent (in that
   agent's plugin cache). The delegation prompt assumes the worker can load it.
@@ -171,9 +164,6 @@ This skill does **two things**:
 - **For kimi agents**, model aliases live in `~/.kimi-code/config.toml` (e.g.
   `kimi-code/k3`). The model comes from each agent's `model` field; if a tick
   fails, check the alias exists there.
-- **For zcode agents**, the desired model must be **pre-selected in the TUI**
-  (`/model`) so it is persisted to `~/.zcode/v2/setting.json` — there is no
-  headless flag, so each zcode agent's `model`/`thinking_effort` are inert.
 
 ## Supported agents
 
@@ -185,7 +175,6 @@ else → **do not spawn; skip it and report why**.
 |---|---|
 | `opencode` | `opencode run --dir "<CWD>" -m <model> --variant <effort> --auto "<worker prompt>"` (model via `-m <provider/model>`; thinking effort via `--variant`; `--auto` auto-approves tool calls so the run is non-interactive; `--dir` sets the cwd) |
 | `kimi` | `cd "<CWD>" && KIMI_MODEL_THINKING_EFFORT=<effort> kimi -m <model> -p "<worker prompt>"` (model via `-m`; thinking effort via the env var; `-p` prompt mode is already non-interactive and auto-approves tool calls — do **not** add `-y`/`--yolo` or `--auto`, they are incompatible with `-p` on kimi ≥ 0.34.0) |
-| `zcode` | `ELECTRON_RUN_AS_NODE=1 NODE_PATH="/Applications/ZCode.app/Contents/Resources/app.asar" "/Applications/ZCode.app/Contents/MacOS/ZCode" "/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs" --prompt "<worker prompt>" --cwd "<CWD>" --mode yolo` (Electron-as-Node bundle; **model and thinking effort have no headless flag** — see [Model & thinking-effort support](#model--thinking-effort-support-read-this-first)) |
 
 The **worker prompt** is the same one-sentence instruction for every agent,
 parameterized by **that agent's id and name** (see [Worker prompt](#worker-prompt)).
@@ -335,7 +324,6 @@ osascript -l JavaScript "$LC_JS" agents-list
   |---|---|
   | `opencode` | `opencode` |
   | `kimi` | `kimi` |
-  | `zcode` | `zcode` |
   | else | unsupported |
 
   Build two lists:
@@ -347,24 +335,10 @@ osascript -l JavaScript "$LC_JS" agents-list
 - **If the supported list is empty** (no agents defined, or none map to a known
   CLI) → **stop and inform the user.** List what was found (if anything) and
   why each was skipped, and tell them to define agents in the app's Settings
-  (or via `create agent`) with `tool` set to `opencode`, `kimi`, or `zcode`.
+  (or via `create agent`) with `tool` set to `opencode` or `kimi`.
   **Do not create the automation.**
 
-### Step 4 — Warn about zcode model/effort
-
-If **any** supported agent is type `zcode` **and** its record carries a `model`
-or non-empty `thinking_effort`, **tell the user explicitly**:
-
-> The zcode agent(s) (<names>) have a model/effort recorded in the app, but
-> zcode's headless CLI does not expose a model or thinking-effort flag. Those
-> settings will be **recorded in the automation but cannot be applied** when
-> zcode is spawned. zcode runs at whatever model its TUI currently has selected
-> (set it with `/model` in the zcode TUI first). opencode and kimi agents are
-> unaffected.
-
-Still proceed — zcode is spawned; only its model/effort settings are inert.
-
-### Step 5 — Create the ZCode automation (every 5 minutes)
+### Step 4 — Create the ZCode automation (every 5 minutes)
 
 Use the host's `CronCreate` tool to schedule a recurring automation that fires
 **every 5 minutes**. Pass exactly the fields below — the prompt must be the
@@ -383,7 +357,7 @@ flow, because the run is headless and has no access to this conversation.
   added/removed/edited in Settings take effect without recreating the
   automation. Do not paraphrase it.
 
-### Step 6 — Run the first tick immediately
+### Step 5 — Run the first tick immediately
 
 Do not wait ~5 minutes for the automation's first fire. Right after creating
 it, run one tick now, in this session: follow the
@@ -394,11 +368,11 @@ has an open task, the tick either does nothing (some agent still has an
 creates the idle-reminder task (step 4 Branch B) — both are fine; the recurring
 automation will pick up future tasks.
 
-### Step 7 — Report and tell the user how to stop it
+### Step 6 — Report and tell the user how to stop it
 
 Report plainly: the effort (name + id), the **agent roster read from the app**
-(each supported agent: name, `tool` → type, model, thinking_effort; flag any
-zcode setting that won't be applied), any **skipped agents** (name + reason),
+  (each supported agent: name, `tool` → type, model, thinking_effort), any
+  **skipped agents** (name + reason),
 the cwd, that the automation is recurring every 5 minutes, and that the first
 tick has already run — report its outcome (which workers were spawned, or that
 the effort was idle). **Tell the user how to stop it:** the automation persists
@@ -409,7 +383,7 @@ tasks left for any of them), the tick will create one reminder task in the same
 effort telling them to delete the automation — completing that reminder does
 NOT stop the automation, they must still `CronList` + `CronDelete` it.** Also
 remind them the spawned worker CLIs must stay logged in (`opencode auth login`
-/ `zcode login` / `kimi login`) for ticks to do real work. Finally, tell them
+/ `kimi login`) for ticks to do real work. Finally, tell them
 **the agent roster is re-read every tick**, so editing agents in the app's
 Settings (or via `create agent` / `update agent` / `delete agent`) takes effect
 on the next tick without recreating the automation.
@@ -429,7 +403,7 @@ You are a LocalCortex multi-agent delegation orchestrator. Each tick:
 
 1. resolve the Effort **`<EFFORT_NAME>`** by name;
 2. read the agent roster from the app (`list agents`) and keep every agent
-   whose `tool` maps to a supported CLI (opencode / kimi / zcode);
+   whose `tool` maps to a supported CLI (opencode / kimi);
 3. for **each** supported agent that has an `open` task (matched by
    `agent_id`), pick one open task for that agent (the first, by `order` then
    `created_at`) and record its **task id**;
@@ -446,10 +420,9 @@ task whose `worker` is not `agent` or whose `agent_id` is not one of the
 supported agents' ids.
 
 The `tool` → CLI mapping is case-insensitive (substring of the `tool` field):
-`opencode`→opencode, `kimi`→kimi, `zcode`→zcode, anything else→skip. Apply each
-agent's `model` and `thinking_effort` to opencode (`-m` / `--variant`) and kimi
-(`-m` / `KIMI_MODEL_THINKING_EFFORT`); for zcode they are inert (no headless
-flag) — spawn zcode anyway, with no model/effort flags.
+`opencode`→opencode, `kimi`→kimi, anything else→skip. Apply each agent's
+`model` and `thinking_effort` to opencode (`-m` / `--variant`) and kimi
+(`-m` / `KIMI_MODEL_THINKING_EFFORT`).
 
 ### Helper
 
@@ -490,7 +463,7 @@ osascript -l JavaScript "$LC_JS" agents-list
   anything; the next tick will retry.
 - **Success** → `JSON.parse` the array. For each agent record, map its `tool`
   (case-insensitive substring) to a CLI type:
-  contains `opencode`→`opencode`, `kimi`→`kimi`, `zcode`→`zcode`, else skip.
+  contains `opencode`→`opencode`, `kimi`→`kimi`, else skip.
   Build the supported roster for this tick: one entry per mapped agent
   `{id, name, type, model, thinking_effort}`.
 - **Empty roster** (no agents, or none map to a known CLI) → **stop.** Do not
@@ -640,18 +613,7 @@ is empty), thinking effort via `KIMI_MODEL_THINKING_EFFORT` (omit if
 cd "<CWD>" && KIMI_MODEL_THINKING_EFFORT=<effort> kimi -m <model> -p "<worker prompt for this agent>"
 ```
 
-**If the agent type is `zcode`** — Electron-as-Node bundle; **no model/effort
-flags** (they are inert even if the agent record carries them):
-
-```bash
-ELECTRON_RUN_AS_NODE=1 \
-  NODE_PATH="/Applications/ZCode.app/Contents/Resources/app.asar" \
-  "/Applications/ZCode.app/Contents/MacOS/ZCode" \
-  "/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs" \
-  --prompt "<worker prompt for this agent>" --cwd "<CWD>" --mode yolo
-```
-
-**Parallel pattern** (example for three agents):
+**Parallel pattern** (example for two agents):
 
 ```bash
 # opencode worker
@@ -660,13 +622,7 @@ OPENCODE_PID=$!
 # kimi worker
 ( cd "<CWD>" && KIMI_MODEL_THINKING_EFFORT=<effort> kimi -m <model> -p "<kimi prompt>" ) &
 KIMI_PID=$!
-# zcode worker
-( ELECTRON_RUN_AS_NODE=1 NODE_PATH="/Applications/ZCode.app/Contents/Resources/app.asar" \
-    "/Applications/ZCode.app/Contents/MacOS/ZCode" \
-    "/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs" \
-    --prompt "<zcode prompt>" --cwd "<CWD>" --mode yolo ) &
-ZCODE_PID=$!
-wait "$OPENCODE_PID" "$KIMI_PID" "$ZCODE_PID"
+wait "$OPENCODE_PID" "$KIMI_PID"
 # report each exit code
 ```
 
@@ -682,7 +638,7 @@ Report each worker's pass/fail by its exit code:
 
 If a spawn command itself is rejected (e.g. an unknown flag on a different
 build), check that worker CLI's `--help` for the exact headless flags on that
-version before the next tick — opencode/kimi/zcode flag names can vary across
+version before the next tick — opencode/kimi flag names can vary across
 builds.
 
 ### 6. One task per agent per tick
@@ -728,19 +684,16 @@ Use the lc-start-work skill to do one task's worth of work on the '<EFFORT_NAME>
   The 5-minute cadence bounds throughput deliberately.
 - **Login is a prerequisite, not a tick concern.** If a spawn fails because a
   worker isn't logged in, the tick can't fix it; surface it in the tick's output
-  and stop that worker. The user must run `opencode auth login` / `zcode login`
-  / `kimi login` separately.
-- **zcode model/effort are inert.** Even if a zcode agent's record carries a
-  model/effort, the zcode spawn command cannot apply them — do not invent flags.
-  opencode and kimi agents are applied as documented.
+  and stop that worker. The user must run `opencode auth login` / `kimi login`
+  separately.
 
 ---
 
 ## Reporting to the user
 
 At setup, report the effort (name + id), the **agent roster read from the app**
-(each supported agent: name, `tool` → type, model, thinking_effort; flag any
-zcode setting that won't be applied headless), any **skipped agents** (name +
+(each supported agent: name, `tool` → type, model, thinking_effort), any
+**skipped agents** (name +
 reason), the cwd, the schedule (every 5 minutes, recurring), the outcome of the
 first tick (already run at setup), and **how to stop it** (list with `CronList`,
 delete by id with `CronDelete`). Also mention the **idle-reminder behavior**:
