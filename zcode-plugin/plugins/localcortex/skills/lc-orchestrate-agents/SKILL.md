@@ -8,15 +8,16 @@ description: >-
   and thinking effort are READ FROM THE APP (its `list agents` definitions) —
   the user never supplies them; each agent's `tool` selects the CLI, its
   `model` is the model, its `thinking_effort` is the effort. Each tick
-  re-reads the agent list, checks every supported agent in parallel, and
-  spawns one worker per agent that has an open task. The spawned worker runs
-  the lc-start-work skill, which finds (by agent_id), claims, works, and
-  completes the task itself. Drives LocalCortex through its JXA/AppleScript
-  surface (osascript), not MCP. Use for scheduled multi-agent delegation —
-  e.g. "orchestrate all my agents on Build".
+  re-reads the agent list, checks every supported agent in parallel, and for
+  each agent that has an open task, picks that open task and spawns the agent's
+  CLI headless with a one-line prompt telling it to run the lc-start-work skill
+  for that task's id (not the agent's id). The worker verifies, claims, works,
+  and completes the named task itself. Drives LocalCortex through its
+  JXA/AppleScript surface (osascript), not MCP. Use for scheduled multi-agent
+  delegation — e.g. "orchestrate all my agents on Build".
 argument-hint: "[effort name]"
 allowed-tools: [Bash, Read]
-version: 0.1.16
+version: 0.1.17
 license: MIT
 ---
 
@@ -40,10 +41,13 @@ everything else is skipped and reported. **If agent info cannot be read from
 the app, or no supported agents exist, do nothing and inform the user.**
 
 Each spawned worker is handed a short prompt that tells it to run the
-**`lc-start-work`** skill for a specific agent **id**, which encapsulates the
-entire claim → read-context → work → write-artifacts → complete flow (it
-bundles its own `lc.js`). So the delegation prompt is just "use `lc-start-work`
-on this effort for this agent id"; the worker does the rest.
+**`lc-start-work`** skill for a specific **task id** (the open task this tick
+picked for that agent), which encapsulates the entire verify → claim →
+read-context → work → write-artifacts → complete flow (it bundles its own
+`lc.js`). So the delegation prompt is just "use `lc-start-work` on this effort
+for this task id"; the worker does the rest. The worker does **not** re-scan
+for an open task by agent and does not care which agent owns the task — it
+works exactly the task id it is handed.
 
 Drive LocalCortex **exclusively through its JXA/AppleScript surface** via the
 bundled `lc.js` helper — never use `mcp__localcortex__*` tools in this skill's
@@ -79,9 +83,11 @@ This skill does **not** ask the user for agents, models, or efforts. It reads
 Each agent's **tasks** are matched by **`agent_id`** (the agent record's `id`
 UUID), not by `worker_label`. As of the app's agent-worker feature, an
 agent-assigned task carries its identity in `agent_id`; `worker_label` is
-human-only and empty for agent tasks. The orchestrator and the spawned
-`lc-start-work` worker both find an agent's tasks with
-`tasks-by-agent ... LC_AGENT_ID=<id>`.
+human-only and empty for agent tasks. The orchestrator finds each agent's open
+tasks with `tasks-by-agent ... LC_AGENT_ID=<id>` so it knows **which CLI to
+spawn**; it then hands the picked task's **id** to the spawned `lc-start-work`
+worker, which does not look the task up by agent at all (it works whatever task
+id it is given).
 
 ## Model & thinking-effort support (read this first)
 
@@ -122,11 +128,11 @@ This skill does **two things**:
 - The user wants a scheduled worker that **does the work itself** in each tick
   (no child-process spawn, single agent) → use `lc-start-job`. Same polling
   cadence; the scheduled run is self-contained and does the task directly.
-- The user wants to run **one** autonomous pull-work-and-complete tick **right
-  now**, on demand, for a single agent → use `lc-start-work` (the very skill
-  this one delegates to).
-- The user points at a **specific task** and wants to work on it **now**, by id
-  or name → use `start-work` / `lc-start-work`.
+- The user wants to run **one** autonomous work-one-task-and-complete tick
+  **right now**, on demand, for a single **task id** → use `lc-start-work`
+  (the very skill this one delegates to).
+- The user points at a **specific task** and wants to work on it **now**, by
+  id → use `start-work` / `lc-start-work`.
 - The user only wants to **look up** an effort → use `lc-fetch-effort`.
 - The user only wants to **look up** an agent's tasks → use
   `lc-fetch-agent-task`.
@@ -425,10 +431,12 @@ You are a LocalCortex multi-agent delegation orchestrator. Each tick:
 2. read the agent roster from the app (`list agents`) and keep every agent
    whose `tool` maps to a supported CLI (opencode / kimi / zcode);
 3. for **each** supported agent that has an `open` task (matched by
-   `agent_id`), spawn that agent's CLI headless from the working directory
-   **`<CWD>`** with a one-line prompt telling it to run the `lc-start-work`
-   skill on this effort for that agent's id;
-4. spawn all such workers **in parallel**, then wait for all of them.
+   `agent_id`), pick one open task for that agent (the first, by `order` then
+   `created_at`) and record its **task id**;
+4. spawn that agent's CLI headless from the working directory **`<CWD>`** with
+   a one-line prompt telling it to run the `lc-start-work` skill on this
+   effort **for that task's id** (not the agent's id);
+5. spawn all such workers **in parallel**, then wait for all of them.
 
 If an agent has no open task, do not spawn it. If **no** supported agent has any
 active task (`open` / `in_progress` / `blocked`), instead create one reminder
@@ -502,14 +510,16 @@ Each call returns `{ query, count, tasks }` of that agent's **active** tasks
 (matched by `agent_id` — orphaned tasks with null `agent_id` never match). For
 each agent, record:
 
-- whether it **has an `open` task** (an agent has work this tick iff at least one
-  of its tasks has `status == "open"`; sort candidates by `order`, then
-  `created_at`) — this drives step 4 Branch A;
+- whether it **has an `open` task**, and if so the **id of the first open task**
+  (sort candidates by `order`, then `created_at`; take the first `open` one) —
+  this task id is what gets handed to the spawned worker in step 5, and its
+  presence drives step 4 Branch A;
 - whether it has **any active task at all** (`open` / `in_progress` / `blocked`)
   — this drives the terminal-state test in step 4 Branch B.
 
 Do not touch tasks another worker already started (`in_progress`); they are not
-yours.
+yours. **Pick at most one open task per agent** (the first); do not hand the
+worker more than one task id.
 
 Then, **once for the whole tick**, fetch the raw task list for the effort:
 
@@ -604,12 +614,14 @@ automation separately.
 ### 5. Spawn one worker per agent that has an open task, in parallel
 
 *(Reached only from step 4 Branch A.)* For **each** supported agent that has an
-`open` task, build its worker prompt and spawn it. Use the spawn command for
+`open` task, build its worker prompt (parameterized by **the open task id**
+picked for that agent in step 3) and spawn it. Use the spawn command for
 that agent's type, applying that agent's own `model` and `thinking_effort`.
 **Launch all of them concurrently** (bash `&`), then `wait` for all to finish
 and collect each exit code. One task per agent per tick — each worker's
-`lc-start-work` handles the claim/work/complete; do not spawn a second worker
-for the same agent in the same tick even if it has multiple open tasks.
+`lc-start-work` verifies, claims, works, and completes the **named task id**;
+do not spawn a second worker for the same agent in the same tick even if it
+has multiple open tasks (the next tick picks up the next one).
 
 **If the agent type is `opencode`** — model via `-m <provider/model>` (omit if
 the agent's `model` is empty), thinking effort via `--variant` (omit if
@@ -682,11 +694,13 @@ automation easy to reason about.
 
 ### Worker prompt
 
-The single-sentence instruction passed to each spawned worker, parameterized by
-**that worker's own** agent id and name (step 5 fills it in per agent):
+The single-sentence instruction passed to each spawned worker, parameterized
+by **the open task id** picked for that agent in step 3 (step 5 fills it in
+per agent). It references the task id, **not** the agent id — the worker's
+`lc-start-work` works exactly that task regardless of agent assignment:
 
 ```
-Use the lc-start-work skill to do one task's worth of work on the '<EFFORT_NAME>' effort for the agent with id '<AGENT_ID>' (name: '<AGENT_NAME>'). You are running headless; make reasonable assumptions and do not ask questions.
+Use the lc-start-work skill to do one task's worth of work on the '<EFFORT_NAME>' effort for the task with id '<TASK_ID>'. You are running headless; make reasonable assumptions and do not ask questions.
 ```
 
 ### Notes for the run

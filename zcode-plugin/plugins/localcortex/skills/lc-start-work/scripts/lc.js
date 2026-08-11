@@ -4,19 +4,24 @@
  * Pure JXA (no Node). Driven by `osascript -l JavaScript <path>/lc.js <cmd>`.
  * A focused subset of the LocalCortex AppleScript surface (see
  * LocalCortex.sdef in the LocalCortex---Swift repo) covering exactly the
- * operations an autonomous "pull open agent task → work it → complete it" run
- * needs. The composites `effort-by-name` and `tasks-by-agent` are the same
- * client-side filters used by the `lc-fetch-effort` and `lc-fetch-agent-task`
- * siblings (the app has no name/worker-search command of its own); `tasks-get`,
- * `task-update`, and `task-complete` map 1:1 to sdef commands. The point of
- * bundling them here is that a scheduled run is headless — it must not chain
- * sibling skills to get its work done, so this one helper is self-contained.
+ * operations an autonomous "work a caller-chosen task → complete it" run needs.
+ * The composite `effort-by-name` is the same client-side filter used by the
+ * `lc-fetch-effort` sibling (the app has no name-search command of its own);
+ * `tasks-get`, `task-update`, and `task-complete` map 1:1 to sdef commands.
+ * The point of bundling them here is that a scheduled run is headless — it
+ * must not chain sibling skills to get its work done, so this one helper is
+ * self-contained.
  *
- * Free-text inputs (effort name, agent label, notes) are passed via environment
- * variables and read here with NSProcessInfo — that is the safe channel for
- * arbitrary content (quotes, newlines, backticks, `$` all pass through
- * verbatim). UUIDs and the subcommand travel as argv. Every command prints the
- * app's JSON-string result to stdout (so the caller JSON.parse's it).
+ * This skill is given a specific task id (chosen by the caller — typically the
+ * lc-orchestrate-agents tick). It does NOT look up tasks by agent and does not
+ * care which agent (if any) a task is assigned to; it works whatever task id it
+ * is handed, after verifying the task exists in the named effort.
+ *
+ * Free-text inputs (effort name, notes) are passed via environment variables
+ * and read here with NSProcessInfo — that is the safe channel for arbitrary
+ * content (quotes, newlines, backticks, `$` all pass through verbatim). UUIDs
+ * (task id, effort id) and the subcommand travel as argv. Every command prints
+ * the app's JSON-string result to stdout (so the caller JSON.parse's it).
  *
  * Errors:
  *   - Any failure — bad usage, or an app-level failure (app not installed:
@@ -84,35 +89,6 @@ function findEffortByName(efforts, query) {
   return { match: null, candidates: substring.length ? substring : null };
 }
 
-// A task is assigned to an agent when its `worker` is "agent". The identity
-// match is by `agent_id` when an agentId is given (the modern wire —
-// app-defined agents set agent_id, not worker_label, which is now human-only
-// for agent tasks); otherwise it falls back to a case-insensitive match
-// against `worker_label` (legacy). Orphaned agent tasks (worker == "agent"
-// but agent_id is null) never match an agentId query. By default only active
-// tasks (open / in_progress / blocked) qualify; archived and completed tasks
-// are excluded unless the caller opts in.
-// (Mirrors the lc-fetch-agent-task sibling so behavior stays consistent.)
-function filterTasksByAgent(tasks, label, includeCompleted, includeArchived, agentId) {
-  const q = norm(label);
-  const byId = agentId !== undefined && agentId !== null && agentId !== "";
-  const out = [];
-  for (let i = 0; i < tasks.length; i++) {
-    const t = tasks[i];
-    if (t.worker !== "agent") continue;
-    if (byId) {
-      // agent_id is a UUID string or JSON null on the wire; null never matches.
-      if (!t.agent_id || t.agent_id !== agentId) continue;
-    } else {
-      if (norm(t.worker_label) !== q) continue;
-    }
-    if (!includeCompleted && t.status === "completed") continue;
-    if (!includeArchived && t.is_archived) continue;
-    out.push(t);
-  }
-  return out;
-}
-
 // --- dispatch -----------------------------------------------------------
 function run() {
   const app = Application("LocalCortex");
@@ -128,46 +104,6 @@ function run() {
       const efforts = JSON.parse(raw);
       const found = findEffortByName(efforts, name);
       result = JSON.stringify({ query: name, match: found.match, candidates: found.candidates });
-      break;
-    }
-    case "tasks-by-agent": {
-      const effortId = positional[0];
-      if (!effortId) throw new Error("usage: lc.js tasks-by-agent <effortId>");
-      // agent_id takes precedence (modern wire for app-defined agents); fall
-      // back to the legacy worker_label match. At least one must be provided.
-      const agentId = envOpt("LC_AGENT_ID");
-      const label = envStr("LC_AGENT_LABEL");
-      if (!agentId && !label) {
-        throw new Error("LC_AGENT_ID or LC_AGENT_LABEL is required for tasks-by-agent");
-      }
-      // listTasks returns the app's JSON-string result; parse to filter, then
-      // re-stringify the composite object below.
-      const raw = app.listTasks(effortId, {
-        includeArchived: envOpt("LC_INCLUDE_ARCHIVED") === "true",
-      });
-      const tasks = JSON.parse(raw);
-      const matched = filterTasksByAgent(
-        tasks,
-        label,
-        envOpt("LC_INCLUDE_COMPLETED") === "true",
-        envOpt("LC_INCLUDE_ARCHIVED") === "true",
-        agentId
-      );
-      result = JSON.stringify({
-        query: agentId
-          ? { effort_id: effortId, agent_id: agentId }
-          : { effort_id: effortId, agent_label: label },
-        count: matched.length,
-        tasks: matched,
-      });
-      break;
-    }
-    case "agents-list": {
-      // listAgents returns the app's JSON-string result verbatim — a JSON
-      // array of agent definition records (id, name, model, thinking_effort,
-      // tool, order, created_at, updated_at). Read-only on this surface; used
-      // to resolve an agent name to its id for app-defined agents.
-      result = app.listAgents();
       break;
     }
     case "tasks-get": {
@@ -213,8 +149,7 @@ function run() {
     default:
       throw new Error(
         "unknown subcommand: '" + cmd + "'. Expected one of: " +
-          "effort-by-name, tasks-by-agent, tasks-get, task-update, " +
-          "workspace-path, task-complete, agents-list."
+          "effort-by-name, tasks-get, task-update, workspace-path, task-complete."
       );
   }
 
