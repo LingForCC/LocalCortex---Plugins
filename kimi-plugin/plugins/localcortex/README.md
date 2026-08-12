@@ -23,7 +23,8 @@ required.
   recurring Kimi Code cron job that, every 5 minutes, checks a named Effort
   for open tasks assigned to each supported agent defined in the LocalCortex
   app and — for every agent that has an open task — spawns that agent's CLI
-  (opencode / kimi) headless to do the work via `lc-start-work`. The agent
+  (opencode / kimi / codex / claude code) headless to do the work via
+  `lc-start-work`. The agent
   roster, model, and thinking effort are read from the app (`list agents`)
   and re-read every tick; when no agent has any active task left, the tick
   creates a single dedup'd reminder task telling the user to delete the cron

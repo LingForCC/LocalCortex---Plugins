@@ -1,6 +1,6 @@
 {
   "name": "localcortex",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "LocalCortex task lifecycle skills — drives the LocalCortex macOS app through its JXA/AppleScript automation surface (osascript), no MCP server required.",
   "author": "Colin Liu",
   "license": "MIT",
