@@ -27,8 +27,8 @@ required.
   `lc-start-work`. The agent
   roster, model, and thinking effort are read from the app (`list agents`)
   and re-read every tick; when no agent has any active task left, the tick
-  creates a single dedup'd reminder task telling the user to delete the cron
-  job. See
+  is a silent no-op — it creates nothing, and the cron job keeps firing until
+  the user deletes it. See
   [`skills/lc-orchestrate-agents/SKILL.md`](skills/lc-orchestrate-agents/SKILL.md).
 - **`lc-start-work`** (`/skill:lc-start-work`) — run **one** autonomous
   work-one-task-and-complete tick on demand: verify a caller-chosen **task id**

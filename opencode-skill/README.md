@@ -137,8 +137,8 @@ with its tick prompt + runner + logs under
 `~/.local/share/opencode/localcortex-jobs/orch-<effort-slug>/`) whose each tick
 runs `opencode run --auto` headlessly. To stop it: `launchctl bootout` (or
 `launchctl unload`) the label, then remove the plist and job dir — the skill
-reports the exact label/paths at setup, and an idle effort produces a reminder
-task with the same stop instructions.
+reports the exact label/paths at setup. An idle effort is a silent no-op: ticks
+create nothing and the LaunchAgent keeps firing until you remove it.
 
 ## Layout
 

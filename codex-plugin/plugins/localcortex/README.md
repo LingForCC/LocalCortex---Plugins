@@ -19,8 +19,9 @@ required.
   Scheduled task that polls an Effort every 5 minutes. Each tick re-reads the
   LocalCortex agent roster and spawns each supported agent CLI (opencode,
   kimi, codex, or claude code) that has open work, delegating one task id to
-  `lc-start-work`. When all supported agents are idle, it creates one
-  deduplicated reminder to stop the schedule. See
+  `lc-start-work`. When all supported agents are idle, the tick is a silent
+  no-op — it creates nothing, and the schedule keeps firing until the user
+  pauses or deletes it from Scheduled. See
   [`skills/lc-orchestrate-agents/SKILL.md`](skills/lc-orchestrate-agents/SKILL.md).
 - **`lc-start-work`** (`$lc-start-work`) — work one caller-chosen task id
   on demand: validate it belongs to the named Effort and is open, claim it,

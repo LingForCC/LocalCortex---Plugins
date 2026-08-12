@@ -234,17 +234,14 @@ osascript -l JavaScript "$LC_JS" <subcommand> [positional args]
 
 The helper prints the app's JSON-string result to stdout — `JSON.parse` it (or
 read the JSON directly). `effort-by-name` and `tasks-by-agent` are client-side
-composites (the app has no name/worker-search of its own); `agents-list`,
-`tasks-list`, `tasks-get`, `task-create`, `task-update`, `task-complete`,
-`workspace-path` map 1:1 to sdef commands.
+composites (the app has no name/worker-search of its own); `agents-list` maps
+1:1 to its sdef command.
 
 | subcommand | argv | env vars | returns |
 |---|---|---|---|
 | `effort-by-name` | — | `LC_NAME` (req), `LC_INCLUDE_ARCHIVED=true` | JSON `{ query, match, candidates }` object |
 | `tasks-by-agent` | `<effortId>` | `LC_AGENT_ID` (preferred) **or** `LC_AGENT_LABEL` (legacy; req one), `LC_INCLUDE_COMPLETED=true`, `LC_INCLUDE_ARCHIVED=true` | JSON `{ query, count, tasks }` object |
-| `tasks-list` | `<effortId>` | `LC_INCLUDE_ARCHIVED=true` | JSON array of **every** task summary in the effort (all statuses; completed included) |
 | `agents-list` | — | — | JSON array of **every** agent definition (`id`, `name`, `tool`, `model`, `thinking_effort`, `order`, `created_at`, `updated_at`) |
-| `task-create` | `<effortId>` | `LC_NAME` (req), `LC_NOTES`, `LC_PARENT_ID` | JSON created task record |
 
 - Statuses: `open`, `in_progress`, `blocked`, `completed`.
 - Workers: `none`, `human`, `agent`. An agent task carries its identity in
@@ -261,17 +258,6 @@ composites (the app has no name/worker-search of its own); `agents-list`,
 - `agents-list` is the raw `list agents` view: every agent definition the app
   knows about, regardless of `tool`. The orchestrator maps each record's `tool`
   to a spawnable CLI; unsupported ones are skipped and reported.
-- `tasks-list` is the **raw** `list tasks` view: every task in the effort
-  regardless of status or worker (completed tasks included; only archived is
-  filterable via `LC_INCLUDE_ARCHIVED`). Use it when you must see completed
-  tasks — e.g. to detect an already-created reminder (the tick's dedup scan) or
-  to read `parent_id` across processed agent tasks. `tasks-by-agent` cannot see
-  completed tasks, so it is not enough for those two jobs.
-- `task-create` maps to the app's `create task` command. That command has **no
-  `worker` parameter** — a newly created task defaults to `worker: none`, so a
-  task created here is **never picked up by any configured agent** (the tick
-  relies on this for its idle-reminder task). Omit `LC_PARENT_ID` entirely to
-  create a root task; set it to a UUID to create a subtask under that parent.
 - On this surface, **nil optional fields are explicit JSON `null`**. `status`,
   `worker`, `worker_label`, `agent_id`, `is_archived` are always present.
 
@@ -453,10 +439,8 @@ Do not wait ~5 minutes for the LaunchAgent's first fire. Right after installing
 it, run one tick now, in this session: follow the
 [Scheduled run](#the-scheduled-run-each-tick-headless) flow below exactly as
 the tick prompt will, with the validated values filled in. If no agent
-has an open task, the tick either does nothing (some agent still has an
-`in_progress` / `blocked` task) or, if no agent has any active task at all,
-creates the idle-reminder task (step 4 Branch B) — both are fine; the recurring
-LaunchAgent will pick up future tasks.
+has an open task, the tick simply does nothing and exits — that's fine; the
+recurring LaunchAgent will pick up future tasks.
 
 ### Step 6 — Report and tell the user how to stop it
 
@@ -476,11 +460,10 @@ rm -f "$PLIST"
 rm -rf "$JOB_DIR"
 ```
 
-Also tell them: **when every supported agent has finished all its active work
-(no `open` / `in_progress` / `blocked` tasks left for any of them), the tick
-will create one reminder task in the same effort telling them to remove the
-LaunchAgent — completing that reminder does NOT stop the job, they must still
-bootout/unload + remove the plist and job dir.** Also remind them the spawned
+Also tell them the job keeps firing
+even when no agent has any active work left — idle ticks are silent no-ops
+that create nothing, and the job only stops when they remove it (bootout/unload
++ remove the plist and job dir). Also remind them the spawned
 worker CLIs must stay logged in (`opencode auth login`, `kimi login`,
 `codex login`, `claude auth login`) for ticks to do real work. Finally, tell
 them **the agent roster is re-read every tick**, so editing agents in the app's
@@ -497,8 +480,8 @@ on the next tick without recreating the LaunchAgent.
 > `opencode run --auto`. **Keep it self-contained** — a headless run cannot ask
 > the user anything mid-tick, and must not chain to sibling skills (it *spawns*
 > workers that run `lc-start-work`; it does not load that skill itself). If no
-> supported agent has any active task, the tick creates a single reminder task
-> (see step 4 Branch B) and exits; it cannot stop itself.
+> supported agent has any active task, the tick does
+> nothing and exits; it cannot stop itself.
 
 You are a LocalCortex multi-agent delegation orchestrator. Each tick:
 
@@ -514,9 +497,9 @@ You are a LocalCortex multi-agent delegation orchestrator. Each tick:
 5. spawn all such workers **in parallel**, then wait for all of them.
 
 If an agent has no open task, do not spawn it. If **no** supported agent has any
-active task (`open` / `in_progress` / `blocked`), instead create one reminder
-task telling the user to stop the LaunchAgent (step 4 Branch B) — the
-LaunchAgent cannot delete itself. Work **only one task per agent per tick**.
+active task (`open` / `in_progress` / `blocked`), do nothing this tick and exit
+— the effort is idle, and idle ticks are silent no-ops (never create any task).
+Work **only one task per agent per tick**.
 Never touch a task whose `worker` is not `agent` or whose `agent_id` is not one
 of the supported agents' ids.
 
@@ -577,7 +560,7 @@ osascript -l JavaScript "$LC_JS" agents-list
   spawn anything this tick. (This can happen if the user deletes or retools all
   agents; the next tick re-reads.)
 
-### 3. For each supported agent, find its tasks by agent_id; also fetch the raw task list
+### 3. For each supported agent, find its tasks by agent_id
 
 Run `tasks-by-agent` **once per roster agent**, using that agent's `id`:
 
@@ -595,104 +578,29 @@ each agent, record:
   this task id is what gets handed to the spawned worker in step 5, and its
   presence drives step 4 Branch A;
 - whether it has **any active task at all** (`open` / `in_progress` / `blocked`)
-  — this drives the terminal-state test in step 4 Branch B.
+  — this drives the idle test in step 4 Branch B.
 
 Do not touch tasks another worker already started (`in_progress`); they are not
 yours. **Pick at most one open task per agent** (the first); do not hand the
 worker more than one task id.
 
-Then, **once for the whole tick**, fetch the raw task list for the effort:
-
-```bash
-osascript -l JavaScript "$LC_JS" tasks-list '<EFFORT_ID>'
-```
-
-This returns **every** task in the effort, any status, any worker (completed
-included). Keep it for step 4 Branch B's dedup scan and parent-pick. (You do not
-need it in Branch A.)
-
-### 4. Decide: spawn workers, or handle the terminal state
+### 4. Decide: spawn workers, or exit idle
 
 Look at the per-agent results from step 3 and pick **one** branch.
 
 #### Branch A — at least one agent has an `open` task → spawn
 
 If any supported agent has an `open` task, proceed to **step 5** and spawn one
-worker per such agent (the existing spawn flow). **Do not create a reminder
-task.** The effort is not done.
+worker per such agent (the existing spawn flow). The effort is not done.
 
-#### Branch B — no agent has any active task → terminal state
+#### Branch B — no agent has any active task → idle, do nothing
 
 If **no** supported agent has any active task (`open` / `in_progress` /
-`blocked`), the effort is idle. The LaunchAgent **cannot delete or disable
-itself** — a headless `opencode run` has no way to remove its own launchd
-registration mid-tick. So instead, create **one** reminder task in this effort
-telling the user to stop the LaunchAgent. Skip step 5 entirely (do not spawn
-any worker this tick).
-
-1. **Dedup — do not create a duplicate reminder.** Using the raw task list from
-   step 3, scan **every** task (open **and** completed — the reminder may
-   already have been completed/dismissed by the user) for one whose `name`
-   contains the sentinel (case-insensitive):
-
-   ```
-   [automation] all agents idle
-   ```
-
-   If any task matches, **a reminder already exists; stop here. Do not create
-   another.** (The sentinel is deliberately fixed and effort-agnostic so every
-   tick computes the same match.)
-
-2. **Pick the reminder's parent.** Look at the processed agent tasks in the raw
-   list — the tasks whose `worker` is `agent` **and** whose `agent_id` is one of
-   the supported agents' ids (regardless of status):
-
-   - If they **all share the same non-null `parent_id`** → create the reminder
-     **under that parent** (set `LC_PARENT_ID` to it).
-   - Otherwise (they span multiple parents, or are all roots, or there are
-     none) → create the reminder as a **root** task in the effort (**omit
-     `LC_PARENT_ID` entirely**).
-
-3. **Create the reminder** via `task-create`, with the fixed sentinel name and
-   the notes below. Pass the notes via `LC_NOTES` (multi-line is fine):
-
-   ```bash
-   LC_NAME='[automation] All agents idle — stop the <EFFORT_NAME> orchestrator' \
-   LC_NOTES='<see reminder notes template below>' \
-   [LC_PARENT_ID='<shared parent id or omit>'] \
-     osascript -l JavaScript "$LC_JS" task-create '<EFFORT_ID>'
-   ```
-
-   The created task defaults to `worker: none` (the `create task` command has no
-   worker param), so **no supported agent will ever pick it up** — the reminder
-   cannot revive the loop.
-
-4. **Stop.** Do not spawn any worker this tick. Subsequent ticks will hit
-   Branch B again, fail the dedup check (the reminder now exists), and exit
-   without creating a duplicate.
-
-**Reminder notes template** (fill in `<EFFORT_NAME>` and the agent names; keep
-the exact bootout/unload + remove instructions so the user knows how to stop.
-`<LABEL>`, `<PLIST>`, and `<JOB_DIR>` are the values the setup step baked into
-this tick prompt):
-
-```
-All supported agents (<names, comma-separated>) have no open, in_progress, or
-blocked tasks in the '<EFFORT_NAME>' effort. The orchestrator launchd job is
-still running every 5 minutes and will keep firing no-op ticks until you remove
-it — a scheduled run cannot stop itself.
-
-To stop it: run
-  launchctl bootout "gui/$(id -u)/<LABEL>" 2>/dev/null \
-    || launchctl unload "<PLIST>"
-then remove the plist at <PLIST> and the job dir at <JOB_DIR>
-(or ask your assistant to stop it).
-
-Completing this reminder does NOT stop the launchd job — you must remove it
-separately.
-
-— created by lc-orchestrate-agents on <tick date/time>
-```
+`blocked`), the effort is idle. **Do nothing this tick: spawn no worker, and
+create no task** — idle ticks are silent no-ops. The LaunchAgent **cannot
+delete or disable itself** — a headless `opencode run` has no way to remove its
+own launchd registration mid-tick — so it simply keeps firing no-op ticks until
+the user removes it. Skip step 5 entirely and stop.
 
 ### 5. Spawn one worker per agent that has an open task, in parallel
 
@@ -801,20 +709,13 @@ Use the lc-start-work skill to do one task's worth of work on the '<EFFORT_NAME>
 
 - **Headless means no questions.** The orchestrator never asks the user anything
   mid-tick; if the effort can't be resolved or the agent roster can't be read it
-  exits silently, and if no agent has any active task it creates the reminder
-  task (step 4 Branch B) and exits. The spawned workers are likewise told to
+  exits silently, and if no agent has any active task it does nothing and exits
+  (step 4 Branch B). The spawned workers are likewise told to
   run headless.
 - **The agent roster is re-read every tick.** Adding, removing, renaming, or
   retooling an agent in the app's Settings (or via `create agent` / `update
   agent` / `delete agent`) takes effect on the next tick — no need to recreate
   the LaunchAgent.
-- **At most one reminder per effort.** When the effort goes idle, the tick
-  creates exactly one reminder task (dedup'd by the `[automation] all agents
-  idle` sentinel across **all** statuses, including a reminder the user already
-  completed). Subsequent idle ticks fail the dedup check and create nothing.
-  Completing or dismissing the reminder does **not** stop the LaunchAgent — the
-  user must still bootout/unload + remove the plist and job dir. The reminder is
-  created with `worker: none`, so no supported agent will ever pick it up.
 - **Fail safe, per worker.** If a spawn fails, leave that agent's tasks as they
   are; do not complete a task on a worker's behalf. Other workers in the same
   tick are unaffected. The next tick (or a human) picks up unfinished work.
@@ -836,11 +737,10 @@ At setup, report the effort (name + id), the **agent roster read from the app**
 reason), the cwd, the LaunchAgent label and plist path, the schedule (every 5
 minutes, recurring), the outcome of the first tick (already run at setup), and
 **how to stop it** (bootout/unload + remove the plist and job dir). Also
-mention the **idle-reminder behavior**: once no agent has any active task left,
-the tick creates a single reminder task in the effort (dedup'd, so only ever
-one) telling the user to remove the LaunchAgent; completing that reminder does
-not stop the job. Finally note that **the agent roster is re-read every tick**,
+mention the **idle behavior**: once no agent has any active task left, ticks
+become silent no-ops that create nothing — the job keeps firing until the user
+removes it. Finally note that **the agent roster is re-read every tick**,
 so editing agents in the app takes effect on the next tick without recreating
 the LaunchAgent. During the scheduled run there is no user to report to; the
-tick's stdout/stderr (per worker, plus the reminder-creation result) —
+tick's stdout/stderr (per worker) —
 captured under the job dir's `tick.log` — is all the trace there is.

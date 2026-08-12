@@ -24,8 +24,8 @@ required.
   re-reads the LocalCortex agent roster (`list agents`) and spawns each
   supported agent CLI (opencode, kimi, codex, or claude code) that has open
   work, delegating one task id per agent to `lc-start-work`. When all
-  supported agents are idle, it creates one deduplicated reminder task telling
-  the user to delete the automation. See
+  supported agents are idle, the tick is a silent no-op — it creates nothing;
+  the automation keeps firing until the user deletes it. See
   [`skills/lc-orchestrate-agents/SKILL.md`](skills/lc-orchestrate-agents/SKILL.md).
 - **`lc-start-work`** (`/lc-start-work`) — work one caller-chosen task id on
   demand: verify it belongs to the named Effort and is open, claim it, do the
