@@ -13,7 +13,10 @@
  * so a Blocked state and its blocker ids can be set in the same call, the way
  * the app requires it, and the `agent id` param (sdef `agent id`) so a created
  * task can be claimed for a defined agent by id — the modern wire, since
- * `worker label` became human-only in 0.3.3.
+ * `worker label` became human-only in 0.3.3. `task-update` also carries
+ * `defer date` (sdef `defer date`) — `create task` has no defer-date param on
+ * the app surface, so an explicit defer date is applied post-create via
+ * `task-update` (due date exists on both).
  *
  * Free-text inputs (effort name, template name, task name, notes, blocker ids)
  * are passed via environment variables and read here with NSProcessInfo —
@@ -206,9 +209,9 @@ function run() {
     }
     case "task-update": {
       // updateTask sdef takes task id (argv) + any subset of name / notes /
-      // status / due date / worker / worker label / agent id / blockers. Only
-      // keys that were provided are forwarded; absent keys are left unchanged
-      // on the app side.
+      // status / defer date / due date / worker / worker label / agent id /
+      // blockers. Only keys that were provided are forwarded; absent keys are
+      // left unchanged on the app side.
       //
       // For assigning an app-defined agent, the modern wire is
       // `LC_WORKER=agent` + `LC_AGENT_ID=<id>` (resolved from the agent name
@@ -236,6 +239,8 @@ function run() {
       if (workerLabel !== undefined) opts.workerLabel = workerLabel;
       const agentId = envOpt("LC_AGENT_ID");
       if (agentId !== undefined) opts.agentId = agentId;
+      const deferDate = envOpt("LC_DEFER_DATE");
+      if (deferDate !== undefined) opts.deferDate = deferDate;
       const dueDate = envOpt("LC_DUE_DATE");
       if (dueDate !== undefined) opts.dueDate = dueDate;
       const blockers = parseBlockerList(envOpt("LC_BLOCKERS"));

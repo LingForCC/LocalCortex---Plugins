@@ -17,7 +17,7 @@ description: >-
   complete tasks; it only creates them.
 argument-hint: "[effort name] [template name]"
 allowed-tools: [Bash, Read]
-version: 0.1.4
+version: 0.1.5
 license: MIT
 ---
 
@@ -27,7 +27,8 @@ Take a named **Effort** and a named task **Template**, read the template's
 **prompt** (free-text instructions describing what tasks to create), interpret
 it, and `create task` for each task it describes inside the effort. Then
 `update task` to apply the things `create` cannot carry — an agent/human
-assignment, and **Blocked / blocker** relationships. Drive LocalCortex
+assignment, an explicit **defer date**, and **Blocked / blocker**
+relationships. Drive LocalCortex
 **exclusively through its JXA/AppleScript surface** via the bundled `lc.js`
 helper — never use `mcp__localcortex__*` tools in this skill's flow.
 
@@ -115,7 +116,7 @@ of its own); the rest map 1:1 to sdef commands.
 | `agent-by-name` | — | `LC_NAME` (req) | JSON `{ query, match, candidates }` object — resolves an agent name to its `id` |
 | `tasks-list` | `<effortId>` | `LC_INCLUDE_ARCHIVED=true` | JSON array of task-summary records (existing tasks, e.g. to reference as blockers) |
 | `task-create` | `<effortId>` | `LC_NAME` (req), `LC_NOTES`, `LC_PARENT_ID`, `LC_DUE_DATE` (ISO) | JSON created task record |
-| `task-update` | `<taskId>` | `LC_NAME`, `LC_NOTES`, `LC_STATUS`, `LC_WORKER`, `LC_WORKER_LABEL`, `LC_AGENT_ID`, `LC_BLOCKERS` (comma-sep ids), `LC_CLEAR_BLOCKERS=true`, `LC_DUE_DATE` (ISO) | JSON updated task record |
+| `task-update` | `<taskId>` | `LC_NAME`, `LC_NOTES`, `LC_STATUS`, `LC_WORKER`, `LC_WORKER_LABEL`, `LC_AGENT_ID`, `LC_BLOCKERS` (comma-sep ids), `LC_CLEAR_BLOCKERS=true`, `LC_DEFER_DATE` (ISO), `LC_DUE_DATE` (ISO) | JSON updated task record |
 | `workspace-path` | `<effortId>` | — | JSON string path, or literal `null` |
 
 - Statuses: `open`, `in_progress`, `blocked`, `completed`.
@@ -153,7 +154,7 @@ App-level error numbers (from LocalCortex):
 | Number | Meaning |
 |---|---|
 | `-2700` | App not found / not scriptable — install or rebuild LocalCortex. Also the number osascript itself uses for a thrown helper error. |
-| `-1001` | validation — bad UUID/enum or missing required param. For `task-update`, most commonly Blocked-without-blockers ("… requires blockers"), a self/cyclic blocker, or a blocker in a different effort. |
+| `-1001` | validation — bad UUID/enum or missing required param. For `task-update`, most commonly Blocked-without-blockers ("… requires blockers"), a self/cyclic blocker, a blocker in a different effort, or a defer date after the due date. |
 | `-1002` | not_found — unknown effort/task/template/parent. |
 | `-1003` | conflict — conflicting state. |
 
@@ -235,6 +236,10 @@ LC_NAME='<task name>' \
 - `due date` is optional ISO-8601 (`2030-01-15T09:00:00Z`); omit when the
   prompt doesn't date the task. A subtask with no due date inherits its
   parent's.
+- `create task` has **no defer-date param** on the app surface — a subtask
+  copies its parent's defer date at creation, but an explicit defer date can
+  only be applied afterwards via `task-update` (`LC_DEFER_DATE`, Step 6 —
+  fold it into the same call as the assignment when there is one).
 - If you also want to reference **existing** tasks in the effort (e.g. as
   blockers), list them first with `tasks-list "$EFFORT_ID"` and collect ids.
 
@@ -281,8 +286,8 @@ LC_STATUS=blocked LC_BLOCKERS='<blockerTaskId1>,<blockerTaskId2>' \
 - No self-blocking, no cycles (the app validates both).
 - To **clear** blockers and revert a Blocked task to open, send
   `LC_CLEAR_BLOCKERS=true` (with no `LC_BLOCKERS`).
-- You can also set `name` / `due date` in the same `task-update` call when it
-  makes sense. Set `notes` here **only** when the prompt explicitly calls for
+- You can also set `name` / `defer date` / `due date` in the same
+  `task-update` call when it makes sense. Set `notes` here **only** when the prompt explicitly calls for
   notes on that task — never add your own.
 
 ### Step 7 — Report
@@ -309,10 +314,12 @@ in place (do not try to roll them back).
 - **Fail safe.** If a create or update errors mid-run, leave what was created
   in place and report the failure (with stderr) rather than retrying blindly
   or rolling back.
-- **No recurrence / defer-date support in this helper.** `create task` /
-  `update task` can take them on the app surface, but templates rarely drive
-  them and they are out of scope here; edit recurrence/defer dates in the app
-  UI if needed.
+- **Defer date is set via `task-update` only.** The app's `create task` has
+  no defer-date param, so an explicit defer date goes on post-create with
+  `LC_DEFER_DATE` (ISO-8601). The app validates defer ≤ due against the
+  merged date pair (violation → `-1001`), and dates cannot be *cleared* via
+  this surface (UI-only). **Recurrence remains out of scope** — edit
+  recurrence rules in the app UI if needed.
 
 ---
 
