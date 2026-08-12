@@ -2,19 +2,30 @@
 
 A Claude Code **local marketplace** plus the `localcortex` plugin, which
 drives the **LocalCortex** macOS task manager through its **JXA / AppleScript
-automation surface** (`osascript`), with no MCP server required. The
-LocalCortex app exposes seven scripting commands (`list efforts`,
-`list tasks`, `get task`, `workspace path`, `create task`, `update task`,
-`complete task`) that have parity with its MCP tools; this plugin wraps them.
+automation surface** (`osascript`), with no MCP server required.
 
 ## Plugin
 
-- **`localcortex`** → skill **`start-work`** (`/start-work`) — start, pick up,
-  or resume a LocalCortex task by id or name, then run the full lifecycle:
-  discover the task, claim it as `agent`/`claude`, collect (but don't create) a
-  follow-up, write artifacts into the effort's workspace folder, complete the
-  task, and create the follow-up as a sibling. See
-  [`plugins/localcortex/skills/start-work/SKILL.md`](plugins/localcortex/skills/start-work/SKILL.md).
+The **`localcortex`** plugin ships four skills:
+
+- **`lc-fetch-effort`** (`/lc-fetch-effort`) — look up a single Effort by name
+  and return its id, workspace folder name, and on-disk workspace path.
+  Read-only; never touches tasks.
+- **`lc-create-from-template`** (`/lc-create-from-template`) — populate a
+  named Effort with tasks materialized from a named Template's prompt,
+  including assignments and Blocked / blocker relationships. Only creates
+  tasks; does not work or complete them.
+- **`lc-orchestrate-agents`** (`/lc-orchestrate-agents`) — set up a recurring
+  Claude Code automation that polls an Effort every 5 minutes, re-reads the
+  app's agent roster each tick, and spawns each supported agent CLI (opencode,
+  kimi, codex, or claude code) that has open work, delegating one task id per
+  agent to `lc-start-work`.
+- **`lc-start-work`** (`/lc-start-work`) — work one caller-chosen task id on
+  demand: verify, claim, work, write artifacts into the Effort's workspace
+  folder, and complete it — one task, then stop.
+
+See [`plugins/localcortex/README.md`](plugins/localcortex/README.md) and each
+skill's `SKILL.md` for details.
 
 ## Requirements
 
@@ -28,6 +39,8 @@ LocalCortex app exposes seven scripting commands (`list efforts`,
   server. The first call from the Claude Code host triggers a one-time macOS
   TCC prompt ("… wants to control LocalCortex"); grant it once and subsequent
   calls are silent.
+- For `lc-orchestrate-agents`, the spawned worker CLIs (opencode, kimi, codex,
+  claude code) must be installed, logged in, and permitted to run unattended.
 
 ## Install (local development)
 
@@ -44,8 +57,7 @@ Or skip the marketplace and load the plugin directly for one session:
 claude --plugin-dir <path-to>/LocalCortex---Plugins/claude-plugin/plugins/localcortex
 ```
 
-Start a new Claude Code session after installation so the `start-work` skill
-is loaded.
+Start a new Claude Code session after installation so the skills are loaded.
 
 ## How it talks to LocalCortex
 
@@ -53,12 +65,12 @@ All commands go through one bundled JXA helper:
 ```bash
 osascript -l JavaScript "$LC_JS" <subcommand> [args]
 ```
-where `lc.js` lives at `plugins/localcortex/skills/start-work/scripts/lc.js`,
-resolved via `$CLAUDE_PLUGIN_ROOT`. Free-text inputs (task name, notes) are
-passed via **environment variables** so that quotes, newlines, backticks, and
-`$` are handled safely; UUIDs travel as argv. See the command reference table
-in
-[`plugins/localcortex/skills/start-work/SKILL.md`](plugins/localcortex/skills/start-work/SKILL.md).
+where `lc.js` lives at `plugins/localcortex/skills/<skill>/scripts/lc.js`
+(each skill bundles its own copy), resolved via `$CLAUDE_PLUGIN_ROOT`.
+Free-text inputs (effort name, task name, notes) are passed via **environment
+variables** so that quotes, newlines, backticks, and `$` are handled safely;
+UUIDs travel as argv. See the command reference table in each skill's
+`SKILL.md`.
 
 ## Layout
 
@@ -72,7 +84,16 @@ claude-plugin/
         ├── .claude-plugin/plugin.json
         ├── README.md
         └── skills/
-            └── start-work/
+            ├── lc-create-from-template/
+            │   ├── SKILL.md
+            │   └── scripts/lc.js
+            ├── lc-fetch-effort/
+            │   ├── SKILL.md
+            │   └── scripts/lc.js
+            ├── lc-orchestrate-agents/
+            │   ├── SKILL.md
+            │   └── scripts/lc.js
+            └── lc-start-work/
                 ├── SKILL.md
                 └── scripts/lc.js
 ```

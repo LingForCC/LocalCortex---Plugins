@@ -2,18 +2,37 @@
 
 A Claude Code plugin that drives the **LocalCortex** macOS task manager through
 its **JXA / AppleScript automation surface** (`osascript`), with no MCP server
-required. The LocalCortex app exposes seven scripting commands (`list efforts`,
-`list tasks`, `get task`, `workspace path`, `create task`, `update task`,
-`complete task`) that have parity with its MCP tools; this plugin wraps them.
+required.
 
-## Skill
+## Skills
 
-- **`start-work`** (`/start-work`) — start, pick up, or resume a LocalCortex
-  task by id or name, then run the full lifecycle: discover the task, claim it
-  as `agent`/`claude`, collect (but don't create) a follow-up, write artifacts
-  into the effort's workspace folder, complete the task, and create the
-  follow-up as a sibling. See
-  [`skills/start-work/SKILL.md`](skills/start-work/SKILL.md).
+- **`lc-fetch-effort`** (`/lc-fetch-effort`) — look up a single Effort by name
+  and return its id, workspace folder name, and on-disk workspace path.
+  Read-only; resolves exact-then-substring (case-insensitive), asks for
+  disambiguation on several matches, and never touches tasks. See
+  [`skills/lc-fetch-effort/SKILL.md`](skills/lc-fetch-effort/SKILL.md).
+- **`lc-create-from-template`** (`/lc-create-from-template`) — populate a named
+  Effort with tasks materialized from a named task Template's prompt. Resolves
+  the effort and template by name, reads the template's free-text prompt,
+  interprets it, and creates the described tasks (roots and subtasks) in the
+  effort, then applies assignments and Blocked / blocker relationships on top
+  (status and blockers set together in one update). Does not work or complete
+  tasks; it only creates them. See
+  [`skills/lc-create-from-template/SKILL.md`](skills/lc-create-from-template/SKILL.md).
+- **`lc-orchestrate-agents`** (`/lc-orchestrate-agents`) — set up a recurring
+  Claude Code automation that polls an Effort every 5 minutes. Each tick
+  re-reads the LocalCortex agent roster (`list agents`) and spawns each
+  supported agent CLI (opencode, kimi, codex, or claude code) that has open
+  work, delegating one task id per agent to `lc-start-work`. When all
+  supported agents are idle, it creates one deduplicated reminder task telling
+  the user to delete the automation. See
+  [`skills/lc-orchestrate-agents/SKILL.md`](skills/lc-orchestrate-agents/SKILL.md).
+- **`lc-start-work`** (`/lc-start-work`) — work one caller-chosen task id on
+  demand: verify it belongs to the named Effort and is open, claim it, do the
+  work, write artifacts into the Effort's workspace folder, and complete it —
+  one task, then stop. It does not choose tasks by agent and creates no
+  schedule. See
+  [`skills/lc-start-work/SKILL.md`](skills/lc-start-work/SKILL.md).
 
 ## Requirements
 
@@ -27,6 +46,8 @@ required. The LocalCortex app exposes seven scripting commands (`list efforts`,
   server. The first call from the Claude Code host triggers a one-time macOS
   TCC prompt ("… wants to control LocalCortex"); grant it once and subsequent
   calls are silent.
+- For `lc-orchestrate-agents`, the spawned worker CLIs (opencode, kimi, codex,
+  claude code) must be installed, logged in, and permitted to run unattended.
 
 ## Install (local development)
 
@@ -43,8 +64,8 @@ All commands go through one bundled JXA helper:
 ```bash
 osascript -l JavaScript "$LC_JS" <subcommand> [args]
 ```
-where `lc.js` lives at `skills/start-work/scripts/lc.js`, resolved via
-`$CLAUDE_PLUGIN_ROOT`. Free-text inputs (task name, notes) are passed via
-**environment variables** so that quotes, newlines, backticks, and `$` are
-handled safely; UUIDs travel as argv. See the command reference table in
-`skills/start-work/SKILL.md`.
+where `lc.js` lives at `skills/<skill>/scripts/lc.js` (each skill bundles its
+own copy), resolved via `$CLAUDE_PLUGIN_ROOT`. Free-text inputs (effort name,
+task name, notes) are passed via **environment variables** so that quotes,
+newlines, backticks, and `$` are handled safely; UUIDs travel as argv. See the
+command reference table in each skill's `SKILL.md`.
