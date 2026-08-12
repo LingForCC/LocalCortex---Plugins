@@ -1,6 +1,6 @@
 {
   "name": "localcortex",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "LocalCortex task lifecycle skills — drives the LocalCortex macOS app through its JXA/AppleScript automation surface (osascript), no MCP server required.",
   "author": {
     "name": "Colin Liu"
@@ -9,11 +9,11 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "LocalCortex",
-    "shortDescription": "Start and complete LocalCortex tasks via AppleScript",
-    "longDescription": "Start, resume, and complete LocalCortex tasks from Codex through the macOS app's JXA/AppleScript automation surface.",
+    "shortDescription": "Manage and orchestrate LocalCortex work via AppleScript",
+    "longDescription": "Find efforts, materialize task templates, work specific tasks, and schedule multi-agent orchestration through LocalCortex's JXA/AppleScript surface.",
     "developerName": "Colin Liu",
     "category": "Productivity",
-    "capabilities": ["Automation", "Write"],
-    "defaultPrompt": "Start work on my LocalCortex task."
+    "capabilities": ["Automation", "Read", "Write"],
+    "defaultPrompt": "Use LocalCortex to manage or orchestrate my task work."
   }
 }

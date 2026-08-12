@@ -1,33 +1,34 @@
 # codex-plugin — Codex distribution for LocalCortex
 
-A Codex **local marketplace** plus the `localcortex` plugin, which drives the
+A Codex **local marketplace** plus the `localcortex` plugin. It drives the
 **LocalCortex** macOS task manager through its **JXA / AppleScript automation
-surface** (`osascript`), with no MCP server required. The LocalCortex app
-exposes seven scripting commands (`list efforts`, `list tasks`, `get task`,
-`workspace path`, `create task`, `update task`, `complete task`) that have
-parity with its MCP tools; this plugin wraps them.
+surface** (`osascript`), with no MCP server required.
 
 ## Plugin
 
-- **`localcortex`** → skill **`start-work`** — start, pick up,
-  or resume a LocalCortex task by id or name, then run the full lifecycle:
-  discover the task, claim it as `agent`/`codex`, collect (but don't create) a
-  follow-up, write artifacts into the effort's workspace folder, complete the
-  task, and create the follow-up as a sibling. See
-  [`plugins/localcortex/skills/start-work/SKILL.md`](plugins/localcortex/skills/start-work/SKILL.md).
+- **`localcortex`** → skills **`lc-create-from-template`**,
+  **`lc-fetch-effort`**, **`lc-orchestrate-agents`**, and
+  **`lc-start-work`**. See
+  [`plugins/localcortex/README.md`](plugins/localcortex/README.md).
 
 ## Requirements
 
 - The **LocalCortex** macOS app, built with the AppleScript/JXA surface
   (scripting name `LocalCortex`). Build it from the
   [`LocalCortex---Swift`](../..) repo:
+
   ```bash
   xcodebuild -project LocalCortex.xcodeproj -scheme LocalCortex-macOS -configuration Debug build
   ```
-  The app auto-launches when an Apple Event is sent — no need to start a
-  server. The first call from the Codex host triggers a one-time macOS TCC
-  prompt ("… wants to control LocalCortex"); grant it once and subsequent
-  calls are silent.
+
+  The app auto-launches when an Apple Event is sent. The first call from the
+  Codex host triggers a one-time macOS TCC prompt ("… wants to control
+  LocalCortex"); grant it once and subsequent calls are silent.
+- **Codex in the ChatGPT desktop app** is required to create or manage the
+  recurring task used by `lc-orchestrate-agents`. Codex CLI and the IDE
+  extension can use the other skills but do not expose Scheduled management.
+- For `lc-orchestrate-agents`, each configured worker CLI must be installed,
+  logged in, and allowed by the Scheduled task's unattended permissions.
 
 ## Install (local development)
 
@@ -37,35 +38,44 @@ Register this directory as a local marketplace, then install the plugin:
 codex plugin marketplace add <path-to>/LocalCortex---Plugins/codex-plugin
 codex plugin add localcortex@localcortex-plugins
 ```
-
-Start a new Codex thread after installation so the `start-work` skill is
-loaded.
+Start a new Codex thread after installation so the skills are loaded.
 
 ## How it talks to LocalCortex
 
-All commands go through one bundled JXA helper:
+Each skill bundles an appropriately scoped JXA helper:
+
 ```bash
 osascript -l JavaScript "$LC_JS" <subcommand> [args]
 ```
-where `lc.js` lives at `plugins/localcortex/skills/start-work/scripts/lc.js`.
-Free-text inputs (task name, notes) are passed via **environment variables** so
-that quotes, newlines, backticks, and `$` are handled safely; UUIDs travel as
-argv. See the command reference table in
-[`plugins/localcortex/skills/start-work/SKILL.md`](plugins/localcortex/skills/start-work/SKILL.md).
+
+The helpers live at
+`plugins/localcortex/skills/<skill>/scripts/lc.js`. Free-text inputs such as
+task names, effort names, and notes travel through environment variables so
+quotes, newlines, backticks, and `$` are handled safely; UUIDs travel as
+arguments.
 
 ## Layout
 
-```
+```text
 codex-plugin/
 ├── .agents/plugins/
-│   └── marketplace.json           # local marketplace (registers localcortex)
-├── README.md                      # this file
+│   └── marketplace.json
+├── README.md
 └── plugins/
     └── localcortex/
         ├── .codex-plugin/plugin.json
         ├── README.md
         └── skills/
-            └── start-work/
+            ├── lc-create-from-template/
+            │   ├── SKILL.md
+            │   └── scripts/lc.js
+            ├── lc-fetch-effort/
+            │   ├── SKILL.md
+            │   └── scripts/lc.js
+            ├── lc-orchestrate-agents/
+            │   ├── SKILL.md
+            │   └── scripts/lc.js
+            └── lc-start-work/
                 ├── SKILL.md
                 └── scripts/lc.js
 ```
