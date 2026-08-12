@@ -4,7 +4,7 @@ description: >-
   Set up a recurring LocalCortex multi-agent orchestrator — the macOS task
   manager app — that polls a named Effort every 5 minutes and, for each agent
   definition in the app that has an open task, spawns that agent's CLI
-  (opencode or kimi) headless to do the work. The agent roster, model,
+  (opencode, kimi, codex, or claude code) headless to do the work. The agent roster, model,
   and thinking effort are READ FROM THE APP (its `list agents` definitions) —
   the user never supplies them; each agent's `tool` selects the CLI, its
   `model` is the model, its `thinking_effort` is the effort. Each tick
@@ -17,7 +17,7 @@ description: >-
   delegation — e.g. "orchestrate all my agents on Build".
 argument-hint: "[effort name]"
 allowed-tools: [Bash, Read]
-version: 0.1.18
+version: 0.1.19
 license: MIT
 ---
 
@@ -34,7 +34,8 @@ the task work itself.
 The **agent roster is read from the app**, not supplied by the user. At setup
 the user provides only the **Effort name** and a **working directory**; the
 skill calls the app's `list agents` command, and for each agent definition maps
-its free-text `tool` to one of the supported CLIs (opencode / kimi),
+its free-text `tool` to one of the supported CLIs (opencode / kimi / codex /
+claude code),
 then uses that agent's `model` and `thinking_effort` as the spawn parameters.
 Supported agents (those whose `tool` maps to a known CLI) become the roster;
 everything else is skipped and reported. **If agent info cannot be read from
@@ -70,13 +71,16 @@ This skill does **not** ask the user for agents, models, or efforts. It reads
   |---|---|
   | `opencode` | `opencode` |
   | `kimi` | `kimi` |
-  | anything else (e.g. `codex`, `claude code`, `zcode`) | **unsupported — skipped** |
+  | `codex` | `codex` |
+  | `claude` | `claude code` |
+  | anything else (e.g. `zcode`) | **unsupported — skipped** |
 
-  So `"opencode"` and `"kimi code"` map correctly; `"codex"`, `"zcode"`, and
-  `"claude code"` are skipped (no spawnable headless CLI is known for them
+  So `"opencode"`, `"kimi code"`, `"codex"`, and `"claude code"` all map
+  correctly; `"zcode"` is skipped (no spawnable headless CLI is known for it
   here).
-- **`model`** and **`thinking_effort`** are applied to opencode and kimi
-  spawns (see [Model & thinking-effort support](#model--thinking-effort-support-read-this-first)).
+- **`model`** and **`thinking_effort`** are applied to opencode, kimi, codex,
+  and claude code spawns
+  (see [Model & thinking-effort support](#model--thinking-effort-support-read-this-first)).
 
 Each agent's **tasks** are matched by **`agent_id`** (the agent record's `id`
 UUID), not by `worker_label`. As of the app's agent-worker feature, an
@@ -90,13 +94,15 @@ id it is given).
 ## Model & thinking-effort support (read this first)
 
 The headless CLIs expose model and thinking-effort selection via flags / env.
-Each agent's `model` / `thinking_effort` (read from the app) is applied to
-opencode and kimi.
+Each agent's `model` / `thinking_effort` (read from the app) is applied to all
+four supported CLIs.
 
 | agent type (from `tool`) | model (headless) | thinking effort (headless) |
 |---|---|---|
 | **opencode** | ✅ `-m <provider/model>` | ✅ `--variant <effort>` |
 | **kimi** | ✅ `-m <alias>` | ✅ env `KIMI_MODEL_THINKING_EFFORT=<low\|medium\|high\|max>` |
+| **codex** | ✅ `-m <model>` | ✅ `-c model_reasoning_effort=<minimal\|low\|medium\|high\|xhigh>` |
+| **claude code** | ✅ `--model <alias-or-id>` | ✅ `--effort <low\|medium\|high\|xhigh\|max\|ultracode>` |
 
 ## When to use this skill
 
@@ -149,12 +155,14 @@ This skill does **two things**:
   until they delete it.
 - **At least one supported agent is defined in the app.** Agents are created in
   the app's Settings (or via `create agent`); each agent's `tool` must map to
-  one of the supported CLIs (opencode / kimi). If no agent is defined,
+  one of the supported CLIs (opencode / kimi / codex / claude code). If no agent is defined,
   or none maps to a supported CLI, the skill does nothing and tells the user.
 - **The spawned worker CLIs are installed and logged in.** Workers run headless,
   so they cannot prompt for login mid-run. Each supported agent has its own
-  one-time login: `kimi login`, `opencode auth login`. Tell the
-  user to run the relevant logins once before relying on this automation.
+  one-time login: `kimi login`, `opencode auth login`, `codex login`,
+  `claude auth login` (or `claude setup-token` for a long-lived scripting
+  token). Tell the user to run the relevant logins once before relying on this
+  automation.
 - **The `lc-start-work` skill is installed** for every spawned agent (in that
   agent's plugin cache). The delegation prompt assumes the worker can load it.
 - **For opencode agents**, models are referenced as `<provider>/<model>` (e.g.
@@ -164,6 +172,19 @@ This skill does **two things**:
 - **For kimi agents**, model aliases live in `~/.kimi-code/config.toml` (e.g.
   `kimi-code/k3`). The model comes from each agent's `model` field; if a tick
   fails, check the alias exists there.
+- **For codex agents**, models are codex model strings (e.g. `gpt-5.3-codex`,
+  `gpt-5.4`) or any Chat Completions / Responses API model id. The model comes
+  from each agent's `model` field; if a tick fails, check the model is
+  available to the user's ChatGPT plan or `OPENAI_API_KEY`
+  (`~/.codex/config.toml`). `thinking_effort` must be one of codex's
+  `model_reasoning_effort` values (`minimal` / `low` / `medium` / `high` /
+  `xhigh`).
+- **For claude code agents**, models are aliases (`sonnet`, `opus`, `haiku`,
+  `fable`) or full model ids (e.g. `claude-sonnet-5`). The model comes from
+  each agent's `model` field; if a tick fails, check the alias/id is valid for
+  the user's Anthropic account (`claude auth status`). `thinking_effort` must
+  be one of claude's `--effort` values (`low` / `medium` / `high` / `xhigh` /
+  `max` / `ultracode`).
 
 ## Supported agents
 
@@ -175,6 +196,8 @@ else → **do not spawn; skip it and report why**.
 |---|---|
 | `opencode` | `opencode run --dir "<CWD>" -m <model> --variant <effort> --auto "<worker prompt>"` (model via `-m <provider/model>`; thinking effort via `--variant`; `--auto` auto-approves tool calls so the run is non-interactive; `--dir` sets the cwd) |
 | `kimi` | `cd "<CWD>" && KIMI_MODEL_THINKING_EFFORT=<effort> kimi -m <model> -p "<worker prompt>"` (model via `-m`; thinking effort via the env var; `-p` prompt mode is already non-interactive and auto-approves tool calls — do **not** add `-y`/`--yolo` or `--auto`, they are incompatible with `-p` on kimi ≥ 0.34.0) |
+| `codex` | `cd "<CWD>" && codex exec -m <model> -c model_reasoning_effort=<effort> -s workspace-write -a never "<worker prompt>"` (`codex exec` runs headless to completion; model via `-m`; reasoning effort via `-c model_reasoning_effort=`; `-s workspace-write` lets the worker read/write the working dir; `-a never` is yolo — never ask for approval; cwd is set by `cd`, since `codex exec` otherwise requires the cwd to be a git repo. Omit `-m` / `-c …` when the agent's `model` / `thinking_effort` is empty) |
+| `claude code` | `cd "<CWD>" && claude -p --model <model> --effort <effort> --dangerously-skip-permissions "<worker prompt>"` (`-p` is non-interactive print mode; model via `--model` alias or id; thinking effort via `--effort`; `--dangerously-skip-permissions` is yolo — skips all permission prompts; cwd is set by `cd` — claude has no cwd flag. Omit `--model` / `--effort` when the agent's `model` / `thinking_effort` is empty) |
 
 The **worker prompt** is the same one-sentence instruction for every agent,
 parameterized by **that agent's id and name** (see [Worker prompt](#worker-prompt)).
@@ -320,22 +343,25 @@ osascript -l JavaScript "$LC_JS" agents-list
 - **On success** → `JSON.parse` the array. For each agent record, compute its
   CLI type from the `tool` field (case-insensitive substring):
 
-  | `tool` contains | type |
-  |---|---|
-  | `opencode` | `opencode` |
-  | `kimi` | `kimi` |
-  | else | unsupported |
+    | `tool` contains | type |
+    |---|---|
+    | `opencode` | `opencode` |
+    | `kimi` | `kimi` |
+    | `codex` | `codex` |
+    | `claude` | `claude code` |
+    | else | unsupported |
 
-  Build two lists:
-  - **Supported agents** — one entry per agent whose `tool` mapped: `{id, name,
-    type, model, thinking_effort}`. Keep the original `order` for reporting.
-  - **Skipped agents** — name + reason (e.g. "tool `codex` has no spawnable
-    CLI").
+    Build two lists:
+    - **Supported agents** — one entry per agent whose `tool` mapped: `{id, name,
+      type, model, thinking_effort}`. Keep the original `order` for reporting.
+    - **Skipped agents** — name + reason (e.g. "tool `zcode` has no spawnable
+      CLI").
 
 - **If the supported list is empty** (no agents defined, or none map to a known
   CLI) → **stop and inform the user.** List what was found (if anything) and
   why each was skipped, and tell them to define agents in the app's Settings
-  (or via `create agent`) with `tool` set to `opencode` or `kimi`.
+  (or via `create agent`) with `tool` set to `opencode`, `kimi`, `codex`, or
+  `claude code`.
   **Do not create the automation.**
 
 ### Step 4 — Create the ZCode automation (every 5 minutes)
@@ -382,8 +408,8 @@ agent has finished all its active work (no `open` / `in_progress` / `blocked`
 tasks left for any of them), the tick will create one reminder task in the same
 effort telling them to delete the automation — completing that reminder does
 NOT stop the automation, they must still `CronList` + `CronDelete` it.** Also
-remind them the spawned worker CLIs must stay logged in (`opencode auth login`
-/ `kimi login`) for ticks to do real work. Finally, tell them
+remind them the spawned worker CLIs must stay logged in (`opencode auth login`,
+`kimi login`, `codex login`, `claude auth login`) for ticks to do real work. Finally, tell them
 **the agent roster is re-read every tick**, so editing agents in the app's
 Settings (or via `create agent` / `update agent` / `delete agent`) takes effect
 on the next tick without recreating the automation.
@@ -403,7 +429,7 @@ You are a LocalCortex multi-agent delegation orchestrator. Each tick:
 
 1. resolve the Effort **`<EFFORT_NAME>`** by name;
 2. read the agent roster from the app (`list agents`) and keep every agent
-   whose `tool` maps to a supported CLI (opencode / kimi);
+   whose `tool` maps to a supported CLI (opencode / kimi / codex / claude code);
 3. for **each** supported agent that has an `open` task (matched by
    `agent_id`), pick one open task for that agent (the first, by `order` then
    `created_at`) and record its **task id**;
@@ -420,9 +446,10 @@ task whose `worker` is not `agent` or whose `agent_id` is not one of the
 supported agents' ids.
 
 The `tool` → CLI mapping is case-insensitive (substring of the `tool` field):
-`opencode`→opencode, `kimi`→kimi, anything else→skip. Apply each agent's
-`model` and `thinking_effort` to opencode (`-m` / `--variant`) and kimi
-(`-m` / `KIMI_MODEL_THINKING_EFFORT`).
+`opencode`→opencode, `kimi`→kimi, `codex`→codex, `claude`→claude code, anything
+else→skip. Apply each agent's `model` and `thinking_effort` to its own CLI:
+opencode (`-m` / `--variant`), kimi (`-m` / `KIMI_MODEL_THINKING_EFFORT`),
+codex (`-m` / `-c model_reasoning_effort=`), claude code (`--model` / `--effort`).
 
 ### Helper
 
@@ -463,7 +490,8 @@ osascript -l JavaScript "$LC_JS" agents-list
   anything; the next tick will retry.
 - **Success** → `JSON.parse` the array. For each agent record, map its `tool`
   (case-insensitive substring) to a CLI type:
-  contains `opencode`→`opencode`, `kimi`→`kimi`, else skip.
+  contains `opencode`→`opencode`, `kimi`→`kimi`, `codex`→`codex`,
+  `claude`→`claude code`, else skip.
   Build the supported roster for this tick: one entry per mapped agent
   `{id, name, type, model, thinking_effort}`.
 - **Empty roster** (no agents, or none map to a known CLI) → **stop.** Do not
@@ -613,7 +641,29 @@ is empty), thinking effort via `KIMI_MODEL_THINKING_EFFORT` (omit if
 cd "<CWD>" && KIMI_MODEL_THINKING_EFFORT=<effort> kimi -m <model> -p "<worker prompt for this agent>"
 ```
 
-**Parallel pattern** (example for two agents):
+**If the agent type is `codex`** — model via `-m <model>` (omit if the agent's
+`model` is empty), reasoning effort via
+`-c model_reasoning_effort=<effort>` (omit if `thinking_effort` is empty),
+`-s workspace-write` so the worker can read/write the working dir, `-a never`
+for yolo (never ask for approval), cwd set by `cd` (`codex exec` otherwise
+requires the cwd to be a git repo):
+
+```bash
+cd "<CWD>" && codex exec -m <model> -c model_reasoning_effort=<effort> -s workspace-write -a never "<worker prompt for this agent>"
+```
+
+**If the agent type is `claude code`** — model via `--model <alias-or-id>`
+(omit if the agent's `model` is empty), thinking effort via `--effort <effort>`
+(omit if `thinking_effort` is empty), `--dangerously-skip-permissions` for yolo
+(skip all permission prompts), `-p` for non-interactive print mode, cwd set by
+`cd` (claude has no cwd flag):
+
+```bash
+cd "<CWD>" && claude -p --model <model> --effort <effort> --dangerously-skip-permissions "<worker prompt for this agent>"
+```
+
+**Parallel pattern** (example for all four agent types — spawn only the ones
+that have an `open` task this tick):
 
 ```bash
 # opencode worker
@@ -622,7 +672,13 @@ OPENCODE_PID=$!
 # kimi worker
 ( cd "<CWD>" && KIMI_MODEL_THINKING_EFFORT=<effort> kimi -m <model> -p "<kimi prompt>" ) &
 KIMI_PID=$!
-wait "$OPENCODE_PID" "$KIMI_PID"
+# codex worker
+( cd "<CWD>" && codex exec -m <model> -c model_reasoning_effort=<effort> -s workspace-write -a never "<codex prompt>" ) &
+CODEX_PID=$!
+# claude code worker
+( cd "<CWD>" && claude -p --model <model> --effort <effort> --dangerously-skip-permissions "<claude prompt>" ) &
+CLAUDE_PID=$!
+wait "$OPENCODE_PID" "$KIMI_PID" "$CODEX_PID" "$CLAUDE_PID"
 # report each exit code
 ```
 
@@ -638,7 +694,7 @@ Report each worker's pass/fail by its exit code:
 
 If a spawn command itself is rejected (e.g. an unknown flag on a different
 build), check that worker CLI's `--help` for the exact headless flags on that
-version before the next tick — opencode/kimi flag names can vary across
+version before the next tick — opencode/kimi/codex/claude flag names can vary across
 builds.
 
 ### 6. One task per agent per tick
@@ -684,7 +740,8 @@ Use the lc-start-work skill to do one task's worth of work on the '<EFFORT_NAME>
   The 5-minute cadence bounds throughput deliberately.
 - **Login is a prerequisite, not a tick concern.** If a spawn fails because a
   worker isn't logged in, the tick can't fix it; surface it in the tick's output
-  and stop that worker. The user must run `opencode auth login` / `kimi login`
+  and stop that worker. The user must run the relevant worker login
+  (`opencode auth login` / `kimi login` / `codex login` / `claude auth login`)
   separately.
 
 ---
