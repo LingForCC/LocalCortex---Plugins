@@ -1,21 +1,20 @@
 ---
 name: lc-create-from-template
 description: >-
-  Populate a named LocalCortex Effort — the macOS task manager app — with tasks
-  materialized from a named task Template's prompt. Resolves the effort and the
-  template by name, reads the template's free-text prompt, interprets it, and
-  creates the described tasks (roots and subtasks) in the effort — then applies
-  assignments and Blocked / blocker relationships on top. Agent assignments
-  resolve an agent name (as written in the template) to a defined agent's id via
-  `list agents`, then claim the task for that agent by id (the modern wire,
-  since `worker label` became human-only in 0.3.3). When a task is
-  Blocked, the status and its blocker list are set together in one update (the
-  app rejects Blocked without blockers). Drives LocalCortex through its
-  JXA/AppleScript surface (osascript), not MCP. Use whenever the user wants to
-  apply / instantiate / spin up a template against an effort — e.g. "create
-  tasks from the Release Checklist template in the Ship 0.4 effort", "apply the
-  Bug Bash template to Payments", "scaffold the Onboarding template inside
-  Launch". Does not work or complete tasks; it only creates them.
+  Populate a named LocalCortex Effort — the macOS task manager app —
+  with tasks materialized from a named task Template's free-text
+  prompt. Resolve both by name, read the prompt, interpret it, and
+  create the described tasks (roots and subtasks) in the effort; then
+  apply assignments and Blocked / blocker relationships on top. Agent
+  assignments resolve an agent name (as written in the template) to a
+  defined agent's id via `list agents`, then claim the task for that
+  agent by id (the modern wire, since worker label became human-only
+  in 0.3.3). When a task is Blocked, the status and its blocker list
+  are set together in one update (the app rejects Blocked without
+  blockers). Drives LocalCortex through its JXA/AppleScript surface
+  (osascript), not MCP. Use whenever the user wants to apply /
+  instantiate / spin up a template against an effort. Does not work or
+  complete tasks; it only creates them.
 license: MIT
 compatibility: opencode
 ---

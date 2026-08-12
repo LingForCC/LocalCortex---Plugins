@@ -1,20 +1,20 @@
 ---
 name: lc-orchestrate-agents
 description: >-
-  Set up a recurring LocalCortex multi-agent orchestrator — the macOS task
-  manager app — that polls a named Effort every 5 minutes and, for each agent
-  definition in the app that has an open task, spawns that agent's CLI
-  (opencode, kimi, codex, or claude code) headless to do the work. The agent roster, model,
-  and thinking effort are READ FROM THE APP (its `list agents` definitions) —
-  the user never supplies them; each agent's `tool` selects the CLI, its
-  `model` is the model, its `thinking_effort` is the effort. Each tick
-  re-reads the agent list, checks every supported agent in parallel, and for
-  each agent that has an open task, picks that open task and spawns the agent's
-  CLI headless with a one-line prompt telling it to run the lc-start-work skill
-  for that task's id (not the agent's id). The worker verifies, claims, works,
-  and completes the named task itself. Drives LocalCortex through its
-  JXA/AppleScript surface (osascript), not MCP. Use for scheduled multi-agent
-  delegation — e.g. "orchestrate all my agents on Build".
+  Set up a recurring LocalCortex multi-agent orchestrator — the macOS
+  task manager app — that polls a named Effort every 5 minutes and
+  spawns each app-defined agent's CLI (opencode, kimi, codex, or
+  claude code) headless to do that agent's open work. The roster,
+  model, and thinking effort are READ FROM THE APP (`list agents`) —
+  the user supplies only the Effort; each agent's `tool` selects the
+  CLI, its `model` is the model, its `thinking_effort` is the effort.
+  Each tick re-reads the roster and, for each supported agent with an
+  open task, picks one task and spawns its CLI headless with a
+  one-line prompt telling it to run the lc-start-work skill for that
+  task's id (not the agent's id); the worker verifies, claims, works,
+  and completes that task itself. Drives LocalCortex through its
+  JXA/AppleScript surface (osascript), not MCP. Use for scheduled
+  multi-agent delegation — e.g. "orchestrate all my agents on Build".
 whenToUse: >-
   When the user wants scheduled, multi-agent delegation on a named LocalCortex
   Effort — every app-defined agent with a spawnable CLI polled for open work,
