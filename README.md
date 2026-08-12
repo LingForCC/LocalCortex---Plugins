@@ -8,6 +8,86 @@ These plugins drive LocalCortex through its **JXA / AppleScript automation
 surface** (`osascript`) — the default, listener-free automation path — rather
 than the opt-in MCP server.
 
+## Quick start
+
+### 1. Install the plugin into your agent(s)
+
+Pick the distribution that matches the coding agent you use and run its install
+commands. Each one is a self-contained local marketplace + `localcortex` plugin
+(or, for OpenCode, a plain skills tree). Install into every agent you intend to
+drive LocalCortex from.
+
+**Claude Code** — [`claude-plugin`](claude-plugin):
+
+```bash
+/plugin marketplace add <path-to>/LocalCortex---Plugins/claude-plugin
+/plugin install localcortex@localcortex-plugins
+```
+
+**Codex** — [`codex-plugin`](codex-plugin):
+
+```bash
+codex plugin marketplace add <path-to>/LocalCortex---Plugins/codex-plugin
+codex plugin add localcortex@localcortex-plugins
+```
+
+**ZCode** — [`zcode-plugin`](zcode-plugin):
+
+In the ZCode client, open **Settings → Plugin Management → Discover → `+`**, then
+point at the `zcode-plugin/` directory to register the local marketplace via
+[`marketplace.json`](zcode-plugin/marketplace.json), or point directly at
+`zcode-plugin/plugins/localcortex` to add the plugin alone.
+
+**Kimi Code** — [`kimi-plugin`](kimi-plugin):
+
+```bash
+# Register as a custom marketplace:
+/plugins marketplace <path-to>/LocalCortex---Plugins/kimi-plugin/marketplace.json
+
+# Or install the plugin directory directly:
+/plugins install <path-to>/LocalCortex---Plugins/kimi-plugin/plugins/localcortex
+```
+
+**OpenCode** — [`opencode-skill`](opencode-skill) (no plugin system; skills tree):
+
+```bash
+npx skills add ./opencode-skill -a opencode
+```
+
+> Start a new session (or run `/reload` where applicable) after installing so the
+> skills are picked up. See each distribution's README linked above for detail.
+
+### 2. Use the skills
+
+Once installed, the `localcortex` plugin exposes four skills. The typical
+sequence to go from empty Effort → worked tasks:
+
+- **`lc-create-from-template`** — populate an Effort with tasks materialized from a
+  **named Template**. Provide the template name and the target effort name. The
+  skill reads the template's free-text prompt and turns it into tasks (roots,
+  subtasks, assignments, and Blocked/blocker relationships). It only creates tasks;
+  it does not work or complete them.
+  > **Create the Template in the LocalCortex App first.** The skill resolves the
+  > template by name from what the app already holds — there is nothing to create
+  > from the agent side.
+
+- **`lc-start-work`** — work **one** task on demand. Provide the **effort name** and
+  a **task id**: it verifies the task exists in that effort, claims it, does the
+  work, writes artifacts into the effort's workspace folder, and completes it —
+  one task, then stop.
+
+- **`lc-orchestrate-agents`** — set up a **recurring scheduled job** that polls an
+  Effort every 5 minutes and delegates each agent's open task to that agent's CLI.
+  Provide the **effort name**; the agent roster, model, and thinking effort are all
+  read from the app on every tick.
+  > **Create the agents in the LocalCortex App first.** The orchestrator reads the
+  > app's agent roster each tick and spawns each supported CLI (opencode, kimi,
+  > codex, or claude code) that has open work — you never supply agent details from
+  > the agent side.
+
+`lc-fetch-effort` is a read-only helper that looks up an Effort by name and
+returns its id, workspace folder, and on-disk path.
+
 ## Distributions
 
 | Folder | Targets | Contents |
