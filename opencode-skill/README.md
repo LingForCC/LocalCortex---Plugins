@@ -19,29 +19,31 @@ subset each one needs.
   exact-then-substring (case-insensitive), asks for disambiguation on several
   matches, and never touches tasks. See
   [`skills/lc-fetch-effort/SKILL.md`](skills/lc-fetch-effort/SKILL.md).
-- **`lc-fetch-agent-task`** — find the active tasks assigned to a specific
-  agent (`worker_label`, e.g. `opencode`) inside a given Effort. Read-only;
-  matches `worker: agent` + label case-insensitively, and never modifies tasks.
-  See [`skills/lc-fetch-agent-task/SKILL.md`](skills/lc-fetch-agent-task/SKILL.md).
-- **`lc-complete-task`** — complete (default) or reopen a LocalCortex task by
-  id. Completing also completes the subtask subtree, auto-unblocks tasks
-  waiting on it, and spawns a fresh open copy if the task carries a recurrence
-  rule. Only the completion transition lives here. See
-  [`skills/lc-complete-task/SKILL.md`](skills/lc-complete-task/SKILL.md).
-- **`lc-start-job`** — set up a recurring autonomous worker that, every 5
-  minutes, polls a named Effort for an **open** task assigned to a given agent
-  (`worker_label`, e.g. `opencode`), does that task's work, writes artifacts
-  into the effort's workspace folder, and completes it. OpenCode has no
-  in-process scheduler, so this installs a **macOS `launchd` LaunchAgent**
-  whose each tick runs `opencode run --auto` headlessly; the scheduled run is
-  self-contained and does not chain sibling skills. See
-  [`skills/lc-start-job/SKILL.md`](skills/lc-start-job/SKILL.md).
-- **`lc-start-work`** — run **one** autonomous pull-work-and-complete tick on
-  demand: find the next **open** task assigned to a given agent inside a named
-  Effort, claim it, do the work, write artifacts into the effort's workspace
-  folder, and complete it — then stop. This is the same flow each scheduled
-  tick of `lc-start-job` runs, invoked once; it installs no LaunchAgent. See
+- **`lc-create-from-template`** — populate a named Effort with tasks
+  materialized from a named task Template's prompt. Resolves the effort and
+  template by name, reads the template's free-text prompt, interprets it, and
+  creates the described tasks (roots and subtasks) in the effort, then applies
+  assignments and Blocked / blocker relationships on top (status and blockers
+  set together in one update). Does not work or complete tasks; it only creates
+  them. See
+  [`skills/lc-create-from-template/SKILL.md`](skills/lc-create-from-template/SKILL.md).
+- **`lc-start-work`** — work **one caller-chosen task** (by id) on demand:
+  verify the task exists in the named Effort, claim it, do the work, write
+  artifacts into the effort's workspace folder, and complete it — then stop. It
+  does not look tasks up by agent and does not care which agent (if any) the
+  task is assigned to; it works exactly the task id it is handed. This is the
+  unit of work each spawned worker in `lc-orchestrate-agents` runs. Installs no
+  LaunchAgent. See
   [`skills/lc-start-work/SKILL.md`](skills/lc-start-work/SKILL.md).
+- **`lc-orchestrate-agents`** — set up a recurring **multi-agent delegation
+  orchestrator**. Installs a macOS `launchd` LaunchAgent that, every 5 minutes,
+  runs a headless `opencode run` tick which reads the agent roster from the app
+  (`list agents`), and for **each** app-defined agent whose `tool` maps to a
+  supported CLI (opencode / kimi / codex / claude code) that has an `open`
+  task, spawns that agent's CLI headless with a one-line prompt telling it to
+  run `lc-start-work` for that task's id. The agent roster, model, and thinking
+  effort are read from the app — the user never supplies them. See
+  [`skills/lc-orchestrate-agents/SKILL.md`](skills/lc-orchestrate-agents/SKILL.md).
 
 ## Requirements
 
@@ -56,8 +58,12 @@ subset each one needs.
   prompt ("… wants to control LocalCortex"); grant it once and subsequent
   calls are silent.
 - **OpenCode** (`opencode` on `$PATH`), authenticated for a model/provider.
-  Required for normal skill use, and `lc-start-job` shells out to
-  `opencode run --auto` for each scheduled tick.
+  Required for normal skill use, and `lc-orchestrate-agents` runs each tick as
+  `opencode run --auto` headlessly.
+- For `lc-orchestrate-agents`, the **spawned worker CLIs** it delegates to must
+  also be installed and logged in (`opencode auth login`, `kimi login`,
+  `codex login`, `claude auth login`) — workers run headless and cannot prompt
+  for login mid-run.
 - **Node.js**, only to run the skills CLI installer below.
 
 ## Install (skills CLI)
@@ -84,7 +90,7 @@ Or, once this folder is published in a GitHub repo, install from the repo
 
 ```bash
 npx skills add <owner>/<repo>            # all skills under skills/
-npx skills add <owner>/<repo> --skill lc-start-job
+npx skills add <owner>/<repo> --skill lc-orchestrate-agents
 ```
 
 Use `-g` for a global install (the default for OpenCode is
@@ -102,7 +108,7 @@ npx skills list
 Remove a skill:
 
 ```bash
-npx skills remove lc-start-job -a opencode
+npx skills remove lc-orchestrate-agents -a opencode
 ```
 
 ## How it talks to LocalCortex
@@ -122,6 +128,18 @@ Free-text inputs (effort name, agent label, notes) are passed via **environment
 variables** so that quotes, newlines, backticks, and `$` are handled safely;
 UUIDs travel as argv.
 
+## Scheduling
+
+OpenCode has no in-process scheduler, so `lc-orchestrate-agents` installs a
+**macOS `launchd` LaunchAgent** (under
+`~/Library/LaunchAgents/ai.opencode.localcortex.orch-<effort-slug>.plist`,
+with its tick prompt + runner + logs under
+`~/.local/share/opencode/localcortex-jobs/orch-<effort-slug>/`) whose each tick
+runs `opencode run --auto` headlessly. To stop it: `launchctl bootout` (or
+`launchctl unload`) the label, then remove the plist and job dir — the skill
+reports the exact label/paths at setup, and an idle effort produces a reminder
+task with the same stop instructions.
+
 ## Layout
 
 ```
@@ -131,16 +149,13 @@ opencode-skill/
     ├── lc-fetch-effort/
     │   ├── SKILL.md
     │   └── scripts/lc.js
-    ├── lc-fetch-agent-task/
+    ├── lc-create-from-template/
     │   ├── SKILL.md
     │   └── scripts/lc.js
-    ├── lc-complete-task/
+    ├── lc-start-work/
     │   ├── SKILL.md
     │   └── scripts/lc.js
-    ├── lc-start-job/
-    │   ├── SKILL.md
-    │   └── scripts/lc.js
-    └── lc-start-work/
+    └── lc-orchestrate-agents/
         ├── SKILL.md
         └── scripts/lc.js
 ```

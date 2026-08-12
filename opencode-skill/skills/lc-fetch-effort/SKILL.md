@@ -7,31 +7,31 @@ description: >-
   MCP. Use whenever the user references an Effort by name (not a task) and wants
   to find it, get its id, or locate its workspace folder — e.g. "find the
   Build LocalCortex 0.3.2 effort", "what's the effort id for Payments", "where
-  is the workspace folder for Investments". Does not read or modify tasks.
+  is the workspace folder for Investments". Does not read or modify tasks; for
+  task work use the lc-start-work skill instead.
 license: MIT
 compatibility: opencode
 ---
 
 # lc-fetch-effort — resolve a LocalCortex Effort by name
 
-Resolve a single **Effort** (LocalCortex's top-level container) from the name
-the user gave.
-
-Report its id and on-disk workspace folder. Drive LocalCortex **exclusively
-through its JXA/AppleScript surface** via the bundled `lc.js` helper — never
-use `mcp__localcortex__*` tools in this skill's flow.
+Resolve a single **Effort** (LocalCortex's top-level container) from its name,
+and report its id and on-disk workspace folder. Drive LocalCortex
+**exclusively through its JXA/AppleScript surface** via the bundled `lc.js`
+helper — never use `mcp__localcortex__*` tools in this skill's flow.
 
 ## When to use this skill
 
 When the user names an **Effort** (not a task) and wants to find it: get its
 id, confirm it exists, see whether it is archived, or locate its workspace
 folder on disk. This skill is read-only — it never reads, creates, or modifies
-tasks.
+tasks. If the user actually wants to work on a task within an effort, hand off
+to the `lc-start-work` skill.
 
 ## When NOT to use this skill
 
-- The user points at a **task** (an item inside an effort), not an effort →
-  this skill only resolves efforts; it does not look up tasks.
+- The user points at a **task** (an item inside an effort), not an effort → use
+  `lc-start-work`.
 - No effort is in view and the user is just browsing → don't invent one.
 - The user already has an effort id → they don't need a lookup.
 
