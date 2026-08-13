@@ -33,6 +33,12 @@ required.
   one task, then stop. It does not choose tasks by agent and creates no
   schedule. See
   [`skills/lc-start-work/SKILL.md`](skills/lc-start-work/SKILL.md).
+- **`lc-skill-creator`** (`/lc-skill-creator`) — meta-skill for creating or
+  revising `lc-*` skills. The authoritative in-plugin reference for the full
+  twelve-command LocalCortex JXA surface, the record DTO shapes, the
+  env-var/argv calling convention, the bundled `lc.js` helper pattern, and an
+  honest account of what JXA automation cannot do. See
+  [`skills/lc-skill-creator/SKILL.md`](skills/lc-skill-creator/SKILL.md).
 
 ## Requirements
 

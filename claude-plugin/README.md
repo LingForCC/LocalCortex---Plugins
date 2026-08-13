@@ -6,7 +6,7 @@ automation surface** (`osascript`), with no MCP server required.
 
 ## Plugin
 
-The **`localcortex`** plugin ships four skills:
+The **`localcortex`** plugin ships five skills:
 
 - **`lc-fetch-effort`** (`/lc-fetch-effort`) — look up a single Effort by name
   and return its id, workspace folder name, and on-disk workspace path.
@@ -23,6 +23,10 @@ The **`localcortex`** plugin ships four skills:
 - **`lc-start-work`** (`/lc-start-work`) — work one caller-chosen task id on
   demand: verify, claim, work, write artifacts into the Effort's workspace
   folder, and complete it — one task, then stop.
+- **`lc-skill-creator`** (`/lc-skill-creator`) — meta-skill for authoring new
+  `lc-*` skills over the full twelve-command LocalCortex JXA surface; the
+  authoritative in-plugin reference for the DTO shapes, calling conventions,
+  and what JXA automation cannot do.
 
 See [`plugins/localcortex/README.md`](plugins/localcortex/README.md) and each
 skill's `SKILL.md` for details.
