@@ -2,9 +2,10 @@
 
 A ZCode plugin that drives the **LocalCortex** macOS task manager through its
 **JXA / AppleScript automation surface** (`osascript`), with no MCP server
-required. The LocalCortex app exposes seven scripting commands (`list efforts`,
-`list tasks`, `get task`, `workspace path`, `create task`, `update task`,
-`complete task`) that have parity with its MCP tools; this plugin wraps them.
+required. The LocalCortex app exposes twelve scripting commands (`list efforts`,
+`list templates`, `list tasks`, `get task`, `workspace path`, `create task`,
+`update task`, `complete task`, `list agents`, `create agent`, `update agent`,
+`delete agent`) that have parity with its MCP tools; this plugin wraps them.
 
 ## Skills
 
@@ -41,6 +42,14 @@ required. The LocalCortex app exposes seven scripting commands (`list efforts`,
   for all workers, and re-checking — until no supported agent has any active
   task, then stops on its own. Use for one-shot, run-to-completion delegation.
   See [`skills/lc-orchestrate-agent-goal/SKILL.md`](skills/lc-orchestrate-agent-goal/SKILL.md).
+- **`lc-skill-creator`** (`/lc-skill-creator`) — a meta-skill that creates or
+  revises other `lc-*` skills. The authoritative guide to the full
+  twelve-command JXA surface — record DTO shapes, the env-var/argv calling
+  convention, the bundled `lc.js` pattern, and an honest account of what JXA
+  automation **cannot** do (no name search, no date/recurrence clearing,
+  templates read-only, file bytes never cross the wire, efforts UI-only, …).
+  Generated skills copy its bundled `lc.js` and trim it to the commands they
+  need. See [`skills/lc-skill-creator/SKILL.md`](skills/lc-skill-creator/SKILL.md).
 
 ## Requirements
 
