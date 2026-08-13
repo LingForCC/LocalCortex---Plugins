@@ -15,6 +15,12 @@ required.
   and return its id, workspace folder name, and absolute workspace path.
   Read-only; it never touches tasks. See
   [`skills/lc-fetch-effort/SKILL.md`](skills/lc-fetch-effort/SKILL.md).
+- **`lc-orchestrate-agent-goal`** (`$lc-orchestrate-agent-goal`) — run
+  multi-agent orchestration in the current Codex session until the Effort's
+  supported agent work is complete. It dispatches one open task per agent in
+  parallel, waits for workers, re-reads LocalCortex, and wait-polls while work
+  remains blocked or in progress. It creates no Scheduled task. See
+  [`skills/lc-orchestrate-agent-goal/SKILL.md`](skills/lc-orchestrate-agent-goal/SKILL.md).
 - **`lc-orchestrate-agents`** (`$lc-orchestrate-agents`) — create a Codex
   Scheduled task that polls an Effort every 5 minutes. Each tick re-reads the
   LocalCortex agent roster and spawns each supported agent CLI (opencode,
@@ -68,6 +74,9 @@ localcortex/
     │   ├── SKILL.md
     │   └── scripts/lc.js
     ├── lc-fetch-effort/
+    │   ├── SKILL.md
+    │   └── scripts/lc.js
+    ├── lc-orchestrate-agent-goal/
     │   ├── SKILL.md
     │   └── scripts/lc.js
     ├── lc-orchestrate-agents/

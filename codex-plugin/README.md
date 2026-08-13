@@ -7,7 +7,8 @@ surface** (`osascript`), with no MCP server required.
 ## Plugin
 
 - **`localcortex`** → skills **`lc-create-from-template`**,
-  **`lc-fetch-effort`**, **`lc-orchestrate-agents`**,
+  **`lc-fetch-effort`**, **`lc-orchestrate-agent-goal`**,
+  **`lc-orchestrate-agents`**,
   **`lc-skill-creator`**, and **`lc-start-work`**. See
   [`plugins/localcortex/README.md`](plugins/localcortex/README.md).
 
@@ -70,6 +71,9 @@ codex-plugin/
             │   ├── SKILL.md
             │   └── scripts/lc.js
             ├── lc-fetch-effort/
+            │   ├── SKILL.md
+            │   └── scripts/lc.js
+            ├── lc-orchestrate-agent-goal/
             │   ├── SKILL.md
             │   └── scripts/lc.js
             ├── lc-orchestrate-agents/
