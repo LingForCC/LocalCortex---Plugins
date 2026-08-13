@@ -19,6 +19,13 @@ required.
   Read-only; resolves exact-then-substring (case-insensitive), asks for
   disambiguation on several matches, and never touches tasks. See
   [`skills/lc-fetch-effort/SKILL.md`](skills/lc-fetch-effort/SKILL.md).
+- **`lc-orchestrate-agent-goal`** (`/skill:lc-orchestrate-agent-goal`) — the
+  goal-mode counterpart of `lc-orchestrate-agents`: same setup, roster, and
+  worker spawn, but **no cron job**. Instead it loops in the current
+  session — dispatching one open task per supported agent each round, waiting
+  for all workers, and re-checking — until no supported agent has any active
+  task, then stops on its own. Use for one-shot, run-to-completion delegation.
+  See [`skills/lc-orchestrate-agent-goal/SKILL.md`](skills/lc-orchestrate-agent-goal/SKILL.md).
 - **`lc-orchestrate-agents`** (`/skill:lc-orchestrate-agents`) — set up a
   recurring Kimi Code cron job that, every 5 minutes, checks a named Effort
   for open tasks assigned to each supported agent defined in the LocalCortex
@@ -79,6 +86,9 @@ localcortex/
     │   ├── SKILL.md
     │   └── scripts/lc.js               # each skill bundles its own copy
     ├── lc-fetch-effort/
+    │   ├── SKILL.md
+    │   └── scripts/lc.js
+    ├── lc-orchestrate-agent-goal/
     │   ├── SKILL.md
     │   └── scripts/lc.js
     ├── lc-orchestrate-agents/
