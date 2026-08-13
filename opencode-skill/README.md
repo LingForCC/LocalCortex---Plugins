@@ -44,6 +44,15 @@ subset each one needs.
   run `lc-start-work` for that task's id. The agent roster, model, and thinking
   effort are read from the app — the user never supplies them. See
   [`skills/lc-orchestrate-agents/SKILL.md`](skills/lc-orchestrate-agents/SKILL.md).
+- **`lc-skill-creator`** — a **meta-skill** for authoring other `lc-*` skills:
+  the authoritative in-plugin reference for the full twelve-command LocalCortex
+  JXA surface (read commands, task CRUD, agent CRUD, plus the client-side
+  by-name composites), the record DTO shapes, the env-var/argv calling
+  convention, the bundled `lc.js` pattern, and an honest account of what JXA
+  automation CANNOT do. Generated skills copy this skill's full-surface `lc.js`
+  and trim it to the commands they need. Use when building a new `lc-*` skill,
+  extending an existing one, or learning the JXA surface. See
+  [`skills/lc-skill-creator/SKILL.md`](skills/lc-skill-creator/SKILL.md).
 
 ## Requirements
 
@@ -155,7 +164,10 @@ opencode-skill/
     ├── lc-start-work/
     │   ├── SKILL.md
     │   └── scripts/lc.js
-    └── lc-orchestrate-agents/
+    ├── lc-orchestrate-agents/
+    │   ├── SKILL.md
+    │   └── scripts/lc.js
+    └── lc-skill-creator/
         ├── SKILL.md
         └── scripts/lc.js
 ```
