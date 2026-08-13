@@ -21,6 +21,26 @@ required. The LocalCortex app exposes seven scripting commands (`list efforts`,
   (status and blockers set together in one update). Does not work or complete
   tasks; it only creates them. See
   [`skills/lc-create-from-template/SKILL.md`](skills/lc-create-from-template/SKILL.md).
+- **`lc-start-work`** (`/lc-start-work`) — do one task's worth of work on a
+  named Effort, on demand, for a given task id: verify the task belongs to the
+  effort, claim it, do the work, write artifacts into the effort's workspace
+  folder, and complete it — one task, then stop. See
+  [`skills/lc-start-work/SKILL.md`](skills/lc-start-work/SKILL.md).
+- **`lc-orchestrate-agents`** (`/lc-orchestrate-agents`) — set up a recurring
+  (every 5 minutes) multi-agent orchestrator that polls a named Effort and, for
+  each app-defined agent whose `tool` maps to a supported CLI (opencode / kimi /
+  codex / claude code), spawns that CLI headless to run `lc-start-work` on one
+  of its open tasks. The roster, model, and thinking effort are read from the
+  app; the user supplies only the Effort and a working directory. Creates a
+  ZCode automation that keeps firing until deleted. See
+  [`skills/lc-orchestrate-agents/SKILL.md`](skills/lc-orchestrate-agents/SKILL.md).
+- **`lc-orchestrate-agent-goal`** (`/lc-orchestrate-agent-goal`) — the
+  goal-mode counterpart of `lc-orchestrate-agents`: same setup, roster, and
+  worker spawn, but **no scheduled automation**. Instead it loops in the current
+  session — dispatching one open task per supported agent each round, waiting
+  for all workers, and re-checking — until no supported agent has any active
+  task, then stops on its own. Use for one-shot, run-to-completion delegation.
+  See [`skills/lc-orchestrate-agent-goal/SKILL.md`](skills/lc-orchestrate-agent-goal/SKILL.md).
 
 ## Requirements
 

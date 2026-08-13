@@ -29,6 +29,22 @@ parity with its MCP tools; this plugin wraps them.
     (status and blockers set together in one update). Does not work or complete
     tasks; it only creates them. See
     [`plugins/localcortex/skills/lc-create-from-template/SKILL.md`](plugins/localcortex/skills/lc-create-from-template/SKILL.md).
+  - **`lc-orchestrate-agents`** (`/lc-orchestrate-agents`) — set up a recurring
+    (every 5 minutes) multi-agent orchestrator that polls a named Effort and, for
+    each app-defined agent whose `tool` maps to a supported CLI (opencode / kimi /
+    codex / claude code), spawns that CLI headless to run `lc-start-work` on one
+    of its open tasks. The roster, model, and thinking effort are read from the
+    app; the user supplies only the Effort and a working directory. Creates a
+    ZCode automation that keeps firing until deleted. See
+    [`plugins/localcortex/skills/lc-orchestrate-agents/SKILL.md`](plugins/localcortex/skills/lc-orchestrate-agents/SKILL.md).
+  - **`lc-orchestrate-agent-goal`** (`/lc-orchestrate-agent-goal`) — the
+    goal-mode counterpart of `lc-orchestrate-agents`: same setup, roster, and
+    worker spawn, but **no scheduled automation**. Instead it loops in the
+    current session — dispatching one open task per supported agent each round,
+    waiting for all workers, and re-checking — until no supported agent has any
+    active task, then stops on its own. Use for one-shot, run-to-completion
+    delegation. See
+    [`plugins/localcortex/skills/lc-orchestrate-agent-goal/SKILL.md`](plugins/localcortex/skills/lc-orchestrate-agent-goal/SKILL.md).
 
 ## Requirements
 
@@ -81,7 +97,13 @@ zcode-plugin/
             ├── lc-start-work/
             │   ├── SKILL.md
             │   └── scripts/lc.js
-            └── lc-create-from-template/
+            ├── lc-create-from-template/
+            │   ├── SKILL.md
+            │   └── scripts/lc.js
+            ├── lc-orchestrate-agents/
+            │   ├── SKILL.md
+            │   └── scripts/lc.js
+            └── lc-orchestrate-agent-goal/
                 ├── SKILL.md
                 └── scripts/lc.js
 ```
