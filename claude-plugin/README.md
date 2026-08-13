@@ -6,7 +6,7 @@ automation surface** (`osascript`), with no MCP server required.
 
 ## Plugin
 
-The **`localcortex`** plugin ships five skills:
+The **`localcortex`** plugin ships six skills:
 
 - **`lc-fetch-effort`** (`/lc-fetch-effort`) — look up a single Effort by name
   and return its id, workspace folder name, and on-disk workspace path.
@@ -20,6 +20,13 @@ The **`localcortex`** plugin ships five skills:
   app's agent roster each tick, and spawns each supported agent CLI (opencode,
   kimi, codex, or claude code) that has open work, delegating one task id per
   agent to `lc-start-work`.
+- **`lc-orchestrate-agent-goal`** (`/lc-orchestrate-agent-goal`) — the
+  goal-mode counterpart of `lc-orchestrate-agents`: same setup, roster, and
+  worker spawn, but **no scheduled automation**. Instead it loops in the
+  current session — dispatching one open task per supported agent each round,
+  waiting for all workers, and re-checking — until no supported agent has any
+  active task, then stops on its own. Use for one-shot, run-to-completion
+  delegation.
 - **`lc-start-work`** (`/lc-start-work`) — work one caller-chosen task id on
   demand: verify, claim, work, write artifacts into the Effort's workspace
   folder, and complete it — one task, then stop.
@@ -95,6 +102,12 @@ claude-plugin/
             │   ├── SKILL.md
             │   └── scripts/lc.js
             ├── lc-orchestrate-agents/
+            │   ├── SKILL.md
+            │   └── scripts/lc.js
+            ├── lc-orchestrate-agent-goal/
+            │   ├── SKILL.md
+            │   └── scripts/lc.js
+            ├── lc-skill-creator/
             │   ├── SKILL.md
             │   └── scripts/lc.js
             └── lc-start-work/

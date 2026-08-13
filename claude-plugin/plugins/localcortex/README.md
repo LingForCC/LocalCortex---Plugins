@@ -27,6 +27,14 @@ required.
   supported agents are idle, the tick is a silent no-op — it creates nothing;
   the automation keeps firing until the user deletes it. See
   [`skills/lc-orchestrate-agents/SKILL.md`](skills/lc-orchestrate-agents/SKILL.md).
+- **`lc-orchestrate-agent-goal`** (`/lc-orchestrate-agent-goal`) — the
+  goal-mode counterpart of `lc-orchestrate-agents`: same setup, roster, and
+  worker spawn, but **no scheduled automation**. Instead it loops in the
+  current session — dispatching one open task per supported agent each round,
+  waiting for all workers, and re-checking — until no supported agent has any
+  active task, then stops on its own. Use for one-shot, run-to-completion
+  delegation. See
+  [`skills/lc-orchestrate-agent-goal/SKILL.md`](skills/lc-orchestrate-agent-goal/SKILL.md).
 - **`lc-start-work`** (`/lc-start-work`) — work one caller-chosen task id on
   demand: verify it belongs to the named Effort and is open, claim it, do the
   work, write artifacts into the Effort's workspace folder, and complete it —
