@@ -190,7 +190,7 @@ else → **do not spawn; skip it and report why**.
 |---|---|
 | `opencode` | `opencode run --dir "<CWD>" -m <model> --variant <effort> --auto "<worker prompt>"` (model via `-m <provider/model>`; thinking effort via `--variant`; `--auto` auto-approves tool calls so the run is non-interactive; `--dir` sets the cwd) |
 | `kimi` | `cd "<CWD>" && KIMI_MODEL_THINKING_EFFORT=<effort> kimi -m <model> -p "<worker prompt>"` (model via `-m`; thinking effort via the env var; `-p` prompt mode is already non-interactive and auto-approves tool calls — do **not** add `-y`/`--yolo` or `--auto`, they are incompatible with `-p` on kimi ≥ 0.34.0) |
-| `codex` | `cd "<CWD>" && codex exec -m <model> -c model_reasoning_effort=<effort> -s workspace-write -a never "<worker prompt>"` (`codex exec` runs headless to completion; model via `-m`; reasoning effort via `-c model_reasoning_effort=`; `-s workspace-write` lets the worker read/write the working dir; `-a never` is yolo — never ask for approval; cwd is set by `cd`, since `codex exec` otherwise requires the cwd to be a git repo. Omit `-m` / `-c …` when the agent's `model` / `thinking_effort` is empty) |
+| `codex` | `cd "<CWD>" && codex exec -m <model> -c model_reasoning_effort=<effort> -s danger-full-access -a never "<worker prompt>"` (`codex exec` runs headless to completion; model via `-m`; reasoning effort via `-c model_reasoning_effort=`; `-s danger-full-access` gives the worker full access with no sandbox limits; `-a never` is yolo — never ask for approval; cwd is set by `cd`, since `codex exec` otherwise requires the cwd to be a git repo. Omit `-m` / `-c …` when the agent's `model` / `thinking_effort` is empty) |
 | `claude code` | `cd "<CWD>" && claude -p --model <model> --effort <effort> --dangerously-skip-permissions "<worker prompt>"` (`-p` is non-interactive print mode; model via `--model` alias or id; thinking effort via `--effort`; `--dangerously-skip-permissions` is yolo — skips all permission prompts; cwd is set by `cd` — claude has no cwd flag. Omit `--model` / `--effort` when the agent's `model` / `thinking_effort` is empty) |
 
 The **worker prompt** is the same one-sentence instruction for every agent,
@@ -548,12 +548,12 @@ cd "<CWD>" && KIMI_MODEL_THINKING_EFFORT=<effort> kimi -m <model> -p "<worker pr
 **If the agent type is `codex`** — model via `-m <model>` (omit if the agent's
 `model` is empty), reasoning effort via
 `-c model_reasoning_effort=<effort>` (omit if `thinking_effort` is empty),
-`-s workspace-write` so the worker can read/write the working dir, `-a never`
+`-s danger-full-access` so the worker runs with full access and no sandbox limits, `-a never`
 for yolo (never ask for approval), cwd set by `cd` (`codex exec` otherwise
 requires the cwd to be a git repo):
 
 ```bash
-cd "<CWD>" && codex exec -m <model> -c model_reasoning_effort=<effort> -s workspace-write -a never "<worker prompt for this agent>"
+cd "<CWD>" && codex exec -m <model> -c model_reasoning_effort=<effort> -s danger-full-access -a never "<worker prompt for this agent>"
 ```
 
 **If the agent type is `claude code`** — model via `--model <alias-or-id>`
@@ -577,7 +577,7 @@ OPENCODE_PID=$!
 ( cd "<CWD>" && KIMI_MODEL_THINKING_EFFORT=<effort> kimi -m <model> -p "<kimi prompt>" ) &
 KIMI_PID=$!
 # codex worker
-( cd "<CWD>" && codex exec -m <model> -c model_reasoning_effort=<effort> -s workspace-write -a never "<codex prompt>" ) &
+( cd "<CWD>" && codex exec -m <model> -c model_reasoning_effort=<effort> -s danger-full-access -a never "<codex prompt>" ) &
 CODEX_PID=$!
 # claude code worker
 ( cd "<CWD>" && claude -p --model <model> --effort <effort> --dangerously-skip-permissions "<claude prompt>" ) &
