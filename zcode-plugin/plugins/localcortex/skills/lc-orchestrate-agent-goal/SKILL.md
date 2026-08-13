@@ -35,10 +35,13 @@ that fires a headless tick every 5 minutes and cannot stop itself.
 `lc-orchestrate-agent-goal` creates **no automation** — instead the
 orchestrator session itself keeps iterating: each round it re-reads the roster,
 dispatches **one open task per agent** that has one (spawning that agent's CLI
-headless, in parallel), waits for all workers, then re-checks. When the effort's
-agent work is fully done (no supported agent has any active `open` /
-`in_progress` / `blocked` task), **it stops on its own.** No cron, no idle
-no-ops forever — just run-to-completion.
+headless, in parallel), waits for all workers, then re-checks. If no task is
+`open` this round but agent tasks are still active (`blocked` — typically
+waiting on human input — or `in_progress`), it **wait-polls** rather than
+stopping, so it resumes the moment a blocker is resolved or a new task is added.
+When the effort's agent work is fully done (no supported agent has any active
+`open` / `in_progress` / `blocked` task), **it stops on its own.** No cron, no
+idle no-ops forever — just run-to-completion.
 
 The orchestrator is a **thin gatekeeper**: each round runs cheap `osascript`
 checks for each agent and only spawns a worker when there is an open task for
@@ -384,33 +387,40 @@ osascript -l JavaScript "$LC_JS" agents-list
 `CronUpdate` / `CronDelete` — there is no scheduled job in this flow. Instead,
 after setup, tell the user you are entering **goal mode**: the current session
 will loop — dispatching one open task per agent that has one, waiting for all
-workers, and re-checking — until no supported agent has any active task, then
-stop. Confirm the effort (name + id), the **agent roster read from the app**
-(each supported agent: name, `tool` → type, model, thinking_effort), any
-**skipped agents**, and the cwd. Then proceed straight to the loop.
+workers, and re-checking — and **keeps running until no supported agent has any
+non-completed task left**. It does **not** stop just because no task is `open`
+this instant: agent tasks that are `blocked` (usually waiting on human input)
+or `in_progress` keep the session alive — it **wait-polls** and resumes the
+moment a blocker is resolved, and it re-polls often enough to catch
+newly-added tasks. Only when every agent task is complete (or the run is
+aborted, or the user interrupts) does it stop. Confirm the effort (name + id),
+the **agent roster read from the app** (each supported agent: name, `tool` →
+type, model, thinking_effort), any **skipped agents**, and the cwd. Then
+proceed straight to the loop.
 
 ### Step 5 — Run the goal-mode loop now
 
 Do not wait. Right after setup, enter the
 [goal-mode run](#the-goal-mode-run-loop-in-this-session) loop in this session,
 with the validated effort name and cwd filled in. The loop terminates on its
-own (done, or stuck with non-open active tasks) — see the stop conditions there.
+own (done or aborted) — see the branch conditions there.
 
 ### Step 6 — Report
 
 Report plainly: the effort (name + id), the **agent roster read from the app**
 (each supported agent: name, `tool` → type, model, thinking_effort), any
 **skipped agents** (name + reason), the cwd, and the loop's final outcome:
-- **Done** — every supported agent's active work is complete (no supported
-  agent had any active task left). Summarize how many tasks were dispatched /
-  completed across rounds.
-- **Stuck** — active tasks remain but none are `open`, so the orchestrator
-  cannot make further progress on its own. List the remaining `in_progress` /
-  `blocked` tasks per agent for human attention (a worker may have failed
-  mid-task, leaving it `in_progress`; or tasks are blocked).
+- **Done** — every supported agent's work is complete (no supported agent has
+  any active task left). Summarize how many tasks were dispatched / completed
+  across rounds.
 - **Aborted** — the effort could not be resolved, or the roster could not be
   read, on some round (e.g. the app was quit). Tell the user; they can re-invoke
   once the app is back.
+
+While running, a **wait** round (active tasks remain but none are `open`) does
+**not** stop — it reports the pending `in_progress` / `blocked` tasks per agent,
+sleeps the poll interval, and re-checks, so the user always knows what the
+session is held up on.
 
 Tell the user this run created **no scheduled automation** — there is nothing
 to stop or delete. If they want unattended recurring dispatch instead, point
@@ -432,8 +442,11 @@ every round**, so editing agents in the app's Settings (or via `create agent` /
 > tick) — that is the whole point of goal mode.
 
 You are a LocalCortex multi-agent delegation orchestrator running in goal mode.
-**Loop** over the following until a stop condition is hit. Effort:
-**`<EFFORT_NAME>`**, working directory: **`<CWD>`**.
+Your goal is to drive the effort to completion — **keep going until no supported
+agent has any non-completed task left**, waiting through `blocked` tasks (which
+typically wait on human input) and re-polling for newly-added tasks rather than
+stopping early. **Loop** over the following until a stop condition (**done** or
+**aborted**) is hit. Effort: **`<EFFORT_NAME>`**, working directory: **`<CWD>`**.
 
 Each **round**:
 
@@ -444,24 +457,35 @@ Each **round**:
    `agent_id`) and record whether it has an `open` task (and the **id of the
    first open task**, by `order` then `created_at`), and whether it has **any
    active task at all** (`open` / `in_progress` / `blocked`);
-4. decide a branch (below): **done**, **dispatch**, or **stuck**;
+4. decide a branch (below): **done**, **dispatch**, or **wait**;
 5. on **dispatch**, spawn one worker per supported agent that has an `open`
    task, **in parallel**, then `wait` for all of them, then start the next
    round;
-6. on **done** or **stuck**, stop.
+6. on **done**, stop; on **wait**, poll on an interval and start the next round
+   (do **not** stop — see **Wait** below).
 
-**Stop conditions**
+**Branch conditions** (only **Done** and **Aborted** stop the loop)
 
 - **Done** — **no** supported agent has **any** active task (`open` /
   `in_progress` / `blocked`). The effort's agent work is complete. Stop and
   report success.
-- **Stuck** — some active tasks remain but **none** are `open` (all
-  `in_progress` / `blocked`). The orchestrator cannot dispatch anything itself,
-  and a single-session loop has no other worker that will finish those tasks, so
-  re-checking immediately would only busy-loop. **Stop and report** the
-  remaining `in_progress` / `blocked` tasks per agent for human attention. (Do
-  **not** sleep-spin; if external work is expected to resolve them, the user can
-  simply re-invoke this skill once that work progresses.)
+- **Dispatch** — at least one supported agent has an `open` task. Spawn one
+  worker per such agent, `wait`, then start the next round (an immediate
+  re-check picks up anything a completion just opened up).
+- **Wait** — some active tasks remain but **none** are `open` (all
+  `in_progress` / `blocked`). **Do not stop.** These are almost always agent
+  tasks **blocked by human-owned tasks** awaiting human input (which the
+  orchestrator cannot and should not do itself), or `in_progress` tasks a
+  spawned worker is still finishing. Once a human completes a blocker, the
+  blocked task **auto-unblocks** and becomes `open` on the next check; new agent
+  tasks may also be added to the effort at any time. So **poll on an interval**
+  (default **~60 seconds**) and re-check (go back to step 1) until either an
+  `open` task appears (→ Dispatch) or no active task remains (→ Done). Do
+  **not** tight busy-loop — the poll interval bounds the cadence. Each wait
+  round reports the pending `in_progress` / `blocked` tasks per agent so the
+  watching user can see what the session is held up on (and, if a worker
+  crashed leaving a task `in_progress` indefinitely, intervene — reset it to
+  `open`, complete it manually, or interrupt the run).
 - **Aborted** — the effort cannot be resolved this round (renamed/deleted, or
   `match` is `null`), or `agents-list` fails (e.g. `-2700`, app not running), or
   the roster is empty. **Stop.** Do not spawn anything; tell the user so they
@@ -540,13 +564,13 @@ each agent, record:
   this task id is what gets handed to the spawned worker in step 5, and its
   presence drives the **dispatch** branch;
 - whether it has **any active task at all** (`open` / `in_progress` / `blocked`)
-  — this drives the **done** / **stuck** test in step 4.
+  — this drives the **done** / **wait** test in step 4.
 
 Do not touch tasks another worker already started (`in_progress`); they are not
 yours. **Pick at most one open task per agent** (the first); do not hand the
 worker more than one task id.
 
-### 4. Decide: done, dispatch, or stuck
+### 4. Decide: done, dispatch, or wait
 
 Look at the per-agent results from step 3 and pick **one** branch.
 
@@ -564,15 +588,37 @@ worker per such agent. After `wait`ing for all of them, **start the next round**
 actionable, or a blocked task auto-unblocking when its blocker completes — get
 picked up.
 
-#### Stuck — active tasks remain, but none are `open`
+#### Wait — active tasks remain, but none are `open`
 
 If some active tasks remain (`in_progress` / `blocked`) but **no** supported
-agent has an `open` task, the orchestrator cannot dispatch anything itself. A
-single-session loop has no other worker that will finish those tasks, so
-re-checking immediately would only busy-loop. **Stop** and report the remaining
-`in_progress` / `blocked` tasks per agent for human attention (a worker may have
-failed mid-task leaving it `in_progress`; or tasks are blocked). Skip step 5.
-The user can re-invoke this skill once that work progresses.
+agent has an `open` task, **do not stop.** These remaining tasks are almost
+always agent tasks **blocked by human-owned tasks** that are awaiting human
+input (the orchestrator cannot and should not do that human work itself), or
+`in_progress` tasks a spawned worker is still finishing. Once a human completes
+a blocker, the blocked task **auto-unblocks** and becomes `open`; new agent
+tasks may also be added to the effort at any time. So **poll on an interval and
+re-check**:
+
+```bash
+sleep 60   # default poll interval; tune up if humans are slow, down to catch new tasks sooner
+```
+
+then **start the next round** (go back to step 1) — which re-reads the roster
+and every agent's tasks, so it picks up newly-unblocked `open` tasks,
+newly-added agent tasks, and any `in_progress` task that just completed. Keep
+wait-polling until a round hits **Dispatch** (something became `open`) or
+**Done** (no active task remains). Skip step 5 on a wait round (nothing to
+spawn).
+
+Do **not** tight busy-loop — the `sleep` bounds the cadence; the only reason to
+re-check at all is that external work (human input on a blocker, or a newly-added
+task) can change the state behind your back. Each wait round should **report the
+pending `in_progress` / `blocked` tasks per agent** (and what each is blocked by,
+when visible) so the watching user knows what the session is held up on. If a
+task stays `in_progress` across many waits with no progress, a worker likely
+crashed mid-task — surface it prominently; the user can reset it to `open`,
+complete it manually, or interrupt the run. The session stays alive per the
+run-to-completion goal.
 
 ### 5. Spawn one worker per agent that has an open task, in parallel
 
@@ -659,14 +705,16 @@ build), check that worker CLI's `--help` for the exact headless flags on that
 version before the next round — opencode/kimi/codex/claude flag names can vary
 across builds.
 
-### 6. After the round, loop or stop
+### 6. After the round, loop, wait, or stop
 
 After `wait`ing for all spawned workers, **start the next round** (go back to
 step 1) so the re-check picks up any task that became `open` because of a
 completion this round (a subtask becoming actionable, or a blocked task
-auto-unblocking). If the next round hits **done** or **stuck**, it stops there.
-Do not loop forever: the only branches that continue are **dispatch** rounds
-(where real work was just spawned and may have produced new open tasks).
+auto-unblocking). The loop only stops on **done** (no active task left for any
+supported agent) or **aborted** (effort/roster unreadable). A **wait** round
+(active tasks remain but none are `open`) does **not** stop — it sleeps the poll
+interval and starts the next round, so the session keeps making progress for as
+long as any non-completed agent task exists (or until the user interrupts).
 
 ### Worker prompt
 
@@ -683,8 +731,10 @@ Use the lc-start-work skill to do one task's worth of work on the '<EFFORT_NAME>
 
 - **Goal mode means no questions mid-loop.** The orchestrator never asks the
   user anything mid-round; if the effort can't be resolved or the agent roster
-  can't be read it aborts, and if no agent has any open task it stops (done or
-  stuck). The spawned workers are likewise told to run headless.
+  can't be read it aborts, and if no agent has any active task it stops (done).
+  When active tasks remain but none are `open`, it **wait-polls** silently
+  rather than asking or stopping. The spawned workers are likewise told to run
+  headless.
 - **The agent roster is re-read every round.** Adding, removing, renaming, or
   retooling an agent in the app's Settings (or via `create agent` / `update
   agent` / `delete agent`) takes effect on the next round — no need to re-run
@@ -695,10 +745,28 @@ Use the lc-start-work skill to do one task's worth of work on the '<EFFORT_NAME>
 - **One task per agent per round.** Spawn at most one worker per agent per
   round. The loop's cadence bounds throughput deliberately, and keeps each
   round bounded and easy to reason about.
-- **It stops on its own.** Unlike `lc-orchestrate-agents` (whose idle ticks
-  fire forever until the user deletes the automation), this loop terminates the
-  moment no supported agent has any active task — there is no automation to
-  clean up afterwards.
+- **It runs to completion, then stops on its own.** Unlike
+  `lc-orchestrate-agents` (whose idle ticks fire forever until the user deletes
+  the automation), this loop keeps going until **no supported agent has any
+  non-completed task** (`open` / `in_progress` / `blocked`), then stops — there
+  is no automation to clean up afterwards. Crucially, it does **not** stop just
+  because no task is `open` this instant: if agent tasks are `blocked`
+  (typically waiting on human input) or `in_progress`, it **wait-polls** and
+  keeps the session alive so it can resume the moment a blocker is resolved or a
+  new task is added, rather than forcing the user to re-invoke.
+- **Wait through human-input blockers; do not stop on `blocked`.** An agent task
+  `blocked` by a human-owned task is waiting on input only the human can provide
+  — the orchestrator cannot do that work. Instead of stopping, it wait-polls:
+  once the human completes the blocker, the blocked task auto-unblocks and the
+  next round dispatches it. This is the main reason the session stays alive.
+- **Re-poll for newly-added tasks.** The task list is re-read every round, so
+  agent tasks added to the effort mid-run are picked up automatically — no need
+  to re-invoke. New tasks appear as `open` on the next check (or the next
+  wait-poll) and are dispatched like any other.
+- **Tune the poll interval to the situation.** The default ~60 s wait-poll is a
+  balance between catching unblocks/new tasks quickly and not hammering the app.
+  If blockers need long human deliberation, a longer interval is fine; if new
+  tasks are expected imminently, shorten it. The user can interrupt at any time.
 - **Login is a prerequisite, not a round concern.** If a spawn fails because a
   worker isn't logged in, the round can't fix it; surface it in the round's
   output. The user must run the relevant worker login
@@ -712,10 +780,12 @@ Use the lc-start-work skill to do one task's worth of work on the '<EFFORT_NAME>
 At the end of the run, report the effort (name + id), the **agent roster read
 from the app** (each supported agent: name, `tool` → type, model,
 thinking_effort), any **skipped agents** (name + reason), the cwd, and the
-loop's final outcome (**done** / **stuck** / **aborted**, with the details
-above). State plainly that **no scheduled automation was created** — there is
-nothing to stop or delete (contrast with `lc-orchestrate-agents`, which creates
-a recurring 5-minute job). Remind the user the spawned worker CLIs must stay
-logged in for rounds to do real work, and that **the agent roster is re-read
-every round**, so editing agents in the app takes effect on the next round
-without re-running setup.
+loop's final outcome (**done** / **aborted**, with the details above). While
+running, a **wait** round reports the pending `in_progress` / `blocked` tasks
+per agent and that it is polling — it is not a terminal outcome. State plainly
+that **no scheduled automation was created** — there is nothing to stop or
+delete (contrast with `lc-orchestrate-agents`, which creates a recurring
+5-minute job). Remind the user the spawned worker CLIs must stay logged in for
+rounds to do real work, and that **the agent roster is re-read every round**, so
+editing agents in the app takes effect on the next round without re-running
+setup.
