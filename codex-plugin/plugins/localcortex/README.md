@@ -23,6 +23,12 @@ required.
   no-op — it creates nothing, and the schedule keeps firing until the user
   pauses or deletes it from Scheduled. See
   [`skills/lc-orchestrate-agents/SKILL.md`](skills/lc-orchestrate-agents/SKILL.md).
+- **`lc-skill-creator`** (`$lc-skill-creator`) — a meta-skill for authoring
+  other `lc-*` skills. It documents the full twelve-command LocalCortex JXA
+  surface, record shapes, calling conventions, bundled-helper pattern, and
+  automation limits. Generated skills copy its full-surface `lc.js` and trim
+  it to the commands they need. See
+  [`skills/lc-skill-creator/SKILL.md`](skills/lc-skill-creator/SKILL.md).
 - **`lc-start-work`** (`$lc-start-work`) — work one caller-chosen task id
   on demand: validate it belongs to the named Effort and is open, claim it,
   do the work, write artifacts into the Effort workspace, and complete it.
@@ -65,6 +71,9 @@ localcortex/
     │   ├── SKILL.md
     │   └── scripts/lc.js
     ├── lc-orchestrate-agents/
+    │   ├── SKILL.md
+    │   └── scripts/lc.js
+    ├── lc-skill-creator/
     │   ├── SKILL.md
     │   └── scripts/lc.js
     └── lc-start-work/
