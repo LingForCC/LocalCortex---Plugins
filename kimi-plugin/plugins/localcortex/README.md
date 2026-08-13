@@ -30,6 +30,15 @@ required.
   is a silent no-op — it creates nothing, and the cron job keeps firing until
   the user deletes it. See
   [`skills/lc-orchestrate-agents/SKILL.md`](skills/lc-orchestrate-agents/SKILL.md).
+- **`lc-skill-creator`** (`/skill:lc-skill-creator`) — a meta-skill that creates
+  or revises other `lc-*` skills. The authoritative guide to the full
+  twelve-command JXA surface — record DTO shapes, the env-var/argv calling
+  convention, the bundled `lc.js` pattern, and an honest account of what JXA
+  automation **cannot** do (no name search, no date/recurrence clearing,
+  templates read-only, file bytes never cross the wire, efforts UI-only, …).
+  Generated skills copy its bundled `lc.js` and trim it to the commands they
+  need. See
+  [`skills/lc-skill-creator/SKILL.md`](skills/lc-skill-creator/SKILL.md).
 - **`lc-start-work`** (`/skill:lc-start-work`) — run **one** autonomous
   work-one-task-and-complete tick on demand: verify a caller-chosen **task id**
   lives in a named Effort and is `open`, claim it, do the work, write artifacts
@@ -73,6 +82,9 @@ localcortex/
     │   ├── SKILL.md
     │   └── scripts/lc.js
     ├── lc-orchestrate-agents/
+    │   ├── SKILL.md
+    │   └── scripts/lc.js
+    ├── lc-skill-creator/
     │   ├── SKILL.md
     │   └── scripts/lc.js
     └── lc-start-work/

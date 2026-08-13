@@ -3,14 +3,16 @@
 A Kimi Code **local marketplace** plus the `localcortex` plugin, which drives
 the **LocalCortex** macOS task manager through its **JXA / AppleScript
 automation surface** (`osascript`), with no MCP server required. The LocalCortex
-app exposes seven scripting commands (`list efforts`, `list tasks`, `get task`,
-`workspace path`, `create task`, `update task`, `complete task`) that have
-parity with its MCP tools; this plugin wraps them.
+app exposes twelve scripting commands (`list efforts`, `list templates`,
+`list tasks`, `get task`, `workspace path`, `create task`, `update task`,
+`complete task`, `list agents`, `create agent`, `update agent`,
+`delete agent`) that have parity with its MCP tools; this plugin wraps them.
 
 ## Plugin
 
 - **`localcortex`** → skills **`lc-create-from-template`**,
-  **`lc-fetch-effort`**, **`lc-orchestrate-agents`**, and **`lc-start-work`**.
+  **`lc-fetch-effort`**, **`lc-orchestrate-agents`**, **`lc-skill-creator`**,
+  and **`lc-start-work`**.
   See [`plugins/localcortex/README.md`](plugins/localcortex/README.md).
 
 ## Requirements
@@ -71,6 +73,9 @@ kimi-plugin/
             │   ├── SKILL.md
             │   └── scripts/lc.js
             ├── lc-orchestrate-agents/
+            │   ├── SKILL.md
+            │   └── scripts/lc.js
+            ├── lc-skill-creator/
             │   ├── SKILL.md
             │   └── scripts/lc.js
             └── lc-start-work/
