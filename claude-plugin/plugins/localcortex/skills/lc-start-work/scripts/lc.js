@@ -122,10 +122,10 @@ function run() {
       if (notes !== undefined) opts.notes = notes;
       const status = envOpt("LC_STATUS");
       if (status !== undefined) opts.status = status;
+      // LC_WORKER accepts only "none" or "agent" — 0.3.11 rejects "human"
+      // (-1001) and deleted the sdef worker-label parameter.
       const worker = envOpt("LC_WORKER");
       if (worker !== undefined) opts.worker = worker;
-      const workerLabel = envOpt("LC_WORKER_LABEL");
-      if (workerLabel !== undefined) opts.workerLabel = workerLabel;
       result = app.updateTask(taskId, opts);
       break;
     }

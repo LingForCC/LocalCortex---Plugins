@@ -8,8 +8,8 @@ description: >-
   apply assignments and Blocked / blocker relationships on top. Agent
   assignments resolve an agent name (as written in the template) to a
   defined agent's id via `list agents`, then claim the task for that
-  agent by id (the modern wire, since worker label became human-only
-  in 0.3.3). When a task is Blocked, the status and its blocker list
+  agent by id — the only assignment wire, since 0.3.11 removed human
+  assignments. When a task is Blocked, the status and its blocker list
   are set together in one update (the app rejects Blocked without
   blockers). Drives LocalCortex through its JXA/AppleScript surface
   (osascript), not MCP. Use whenever the user wants to apply /
@@ -26,7 +26,7 @@ license: MIT
 Take a named **Effort** and a named task **Template**, read the template's
 **prompt** (free-text instructions describing what tasks to create), interpret
 it, and `create task` for each task it describes inside the effort. Then
-`update task` to apply the things `create` cannot carry — an agent/human
+`update task` to apply the things `create` cannot carry — an agent
 assignment, an explicit **defer date**, and **Blocked / blocker**
 relationships. Drive LocalCortex
 **exclusively through its JXA/AppleScript surface** via the bundled `lc.js`
@@ -116,15 +116,16 @@ of its own); the rest map 1:1 to sdef commands.
 | `agent-by-name` | — | `LC_NAME` (req) | JSON `{ query, match, candidates }` object — resolves an agent name to its `id` |
 | `tasks-list` | `<effortId>` | `LC_INCLUDE_ARCHIVED=true` | JSON array of task-summary records (existing tasks, e.g. to reference as blockers) |
 | `task-create` | `<effortId>` | `LC_NAME` (req), `LC_NOTES`, `LC_PARENT_ID`, `LC_DUE_DATE` (ISO) | JSON created task record |
-| `task-update` | `<taskId>` | `LC_NAME`, `LC_NOTES`, `LC_STATUS`, `LC_WORKER`, `LC_WORKER_LABEL`, `LC_AGENT_ID`, `LC_BLOCKERS` (comma-sep ids), `LC_CLEAR_BLOCKERS=true`, `LC_DEFER_DATE` (ISO), `LC_DUE_DATE` (ISO) | JSON updated task record |
+| `task-update` | `<taskId>` | `LC_NAME`, `LC_NOTES`, `LC_STATUS`, `LC_WORKER` (`none` or `agent`), `LC_AGENT_ID`, `LC_BLOCKERS` (comma-sep ids), `LC_CLEAR_BLOCKERS=true`, `LC_DEFER_DATE` (ISO), `LC_DUE_DATE` (ISO) | JSON updated task record |
 | `workspace-path` | `<effortId>` | — | JSON string path, or literal `null` |
 
 - Statuses: `open`, `in_progress`, `blocked`, `completed`.
-- Workers: `none`, `human`, `agent`. An agent task carries its identity in
-  `agent_id` (the agent definition's UUID); `worker_label` is **human-only as
-  of 0.3.3** — to assign a task to a defined agent, set `worker` to `agent`
-  and `agent_id` to the agent's id (resolved from its name via `agents-list` /
-  `agent-by-name`). Do not use `worker_label` for agent tasks.
+- Workers: writable `none` or `agent`; `human` is a legacy read-only value
+  (the app rejects writing it with `-1001`). An agent task carries its
+  identity in `agent_id` (the agent definition's UUID) — to assign a task to
+  a defined agent, set `worker` to `agent` and `agent_id` to the agent's id
+  (resolved from its name via `agents-list` / `agent-by-name`).
+  `worker_label` is a legacy read-back field, not a write path.
 - `effort-by-name` / `template-by-name` / `agent-by-name` match the record's
   own `name` case-insensitively, exact first then substring; `match` is `null`
   on zero or ambiguous matches.
@@ -250,8 +251,8 @@ LC_NAME='<task name>' \
 
 **Assign a task to a defined agent.** When the template's prompt assigns a
 task to an agent by name, resolve that name to the agent's id first, then claim
-the task for that agent by id (the modern wire — `worker label` is human-only
-as of 0.3.3 and is ignored for agent tasks):
+the task for that agent by id (`agent id` is the only assignment wire —
+0.3.11 removed human assignments and deleted the `worker label` param):
 
 ```bash
 # 1. Resolve the agent name (as written in the template) to exactly one agent.
@@ -268,9 +269,9 @@ LC_WORKER=agent LC_AGENT_ID='<agent id>' \
 ```
 
 `LC_STATUS` is optional — set it only when the prompt implies the task should
-start somewhere other than the default `open`. **Assign a human** instead with
-`LC_WORKER=human LC_WORKER_LABEL='<label>'` (the only valid use of
-`worker_label`).
+start somewhere other than the default `open`. **Human assignments cannot be
+written over the wire** (0.3.11) — leave the task unassigned (`worker=none`)
+and say so in the run report.
 
 **Block a task — set status and blockers TOGETHER in one call.** Entering
 Blocked requires ≥1 blocker; the app rejects `status=blocked` with no

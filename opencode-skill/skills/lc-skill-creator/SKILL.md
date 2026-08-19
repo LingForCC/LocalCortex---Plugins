@@ -124,8 +124,8 @@ keeps them intact.
 
 ### Calling convention
 
-- **Free text** (effort/task/agent/template names, notes, model, tool, prompt,
-  worker label) is passed via **environment variables**, never inline in argv —
+- **Free text** (effort/task/agent/template names, notes, model, tool, prompt)
+  is passed via **environment variables**, never inline in argv —
   env vars are safe for quotes, newlines, backticks, and `$`. Each command's
   table lists its env vars.
 - **UUIDs** (task/effort/agent ids) and the **subcommand** travel as **argv**.
@@ -136,7 +136,7 @@ keeps them intact.
   to camelCase keys: `list efforts` → `app.listEfforts({includeArchived})`;
   `in effort` → `inEffort`; `with name` → `withName`; `due date` → `dueDate`;
   `defer date` → `deferDate`; `thinking effort` → `thinkingEffort`;
-  `agent id` → `agentId`; `worker label` → `workerLabel`. A command's
+  `agent id` → `agentId`. A command's
   **direct parameter** (e.g. the task id on `get task`) is the first positional
   argument to the JXA method: `app.getTask(taskId)`,
   `app.updateTask(taskId, opts)`.
@@ -183,7 +183,7 @@ Subcommands in the bundled `lc.js`. "argv" = positional args; "env" = env vars.
 | subcommand | argv | env (all optional unless noted) | returns |
 |---|---|---|---|
 | `task-create` | `<effortId>` | `LC_NAME` (req), `LC_NOTES`, `LC_PARENT_ID`, `LC_DUE_DATE`, `LC_RECURRENCE` | created task record |
-| `task-update` | `<taskId>` | `LC_NAME`, `LC_NOTES`, `LC_STATUS`, `LC_WORKER`, `LC_WORKER_LABEL`, `LC_AGENT_ID`, `LC_DEFER_DATE`, `LC_DUE_DATE`, `LC_RECURRENCE`, `LC_BLOCKERS`, `LC_CLEAR_BLOCKERS=true` | updated task record |
+| `task-update` | `<taskId>` | `LC_NAME`, `LC_NOTES`, `LC_STATUS`, `LC_WORKER` (`none` or `agent`), `LC_AGENT_ID`, `LC_DEFER_DATE`, `LC_DUE_DATE`, `LC_RECURRENCE`, `LC_BLOCKERS`, `LC_CLEAR_BLOCKERS=true` | updated task record |
 | `task-complete` | `<taskId>` | `LC_COMPLETED=false` (default `true`) | updated task record |
 
 ### Write commands (agents)
@@ -227,7 +227,8 @@ recurrence is supplied. Pass it from the helper as a JSON object string in
 ### Enum string values
 
 - `status` — `open`, `in_progress`, `blocked`, `completed`.
-- `worker` — `none`, `human`, `agent`.
+- `worker` — writable `none` or `agent`; `human` survives as a legacy
+  read-only value on records claimed before 0.3.11.
 - (Recurrence enums as above.)
 
 ### By-name composites
@@ -344,10 +345,12 @@ silently fake it.
   nullified `agent_id` and surface as an orphan state in the UI; the user
   re-picks or switches the worker. Automation cannot reassign them in bulk in
   one call (you'd loop `task-update`).
-- **`worker label` is human-only as of 0.3.3.** To claim a task for an
+- **`worker label` is gone from the write surface (0.3.11).** The sdef
+  `worker label` parameter is deleted — passing it fails the whole call — and
+  `update task` rejects `worker: "human"` (`-1001`). To claim a task for an
   app-defined agent, use `LC_WORKER=agent` + `LC_AGENT_ID=<id>` (resolved from
-  the agent name via `agent-by-name`). `worker_label` is ignored for agent
-  tasks.
+  the agent name via `agent-by-name`). `worker_label` survives only as a
+  read-back field naming a stale human claim.
 - **Blocked-state invariants are enforced server-side.** Entering `blocked`
   *requires* `blockers` in the same call; completing a task (or any descendant)
   with an incomplete blocker is rejected (`-1001`); a blocked task with an

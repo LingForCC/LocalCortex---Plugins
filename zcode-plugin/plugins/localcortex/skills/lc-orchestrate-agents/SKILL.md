@@ -84,8 +84,9 @@ This skill does **not** ask the user for agents, models, or efforts. It reads
 
 Each agent's **tasks** are matched by **`agent_id`** (the agent record's `id`
 UUID), not by `worker_label`. As of the app's agent-worker feature, an
-agent-assigned task carries its identity in `agent_id`; `worker_label` is
-human-only and empty for agent tasks. The orchestrator finds each agent's open
+agent-assigned task carries its identity in `agent_id`; `worker_label` is a
+legacy read-back field (it can still name a stale human claim) and is empty
+for agent tasks. The orchestrator finds each agent's open
 tasks with `tasks-by-agent ... LC_AGENT_ID=<id>` so it knows **which CLI to
 spawn**; it then hands the picked task's **id** to the spawned `lc-start-work`
 worker, which does not look the task up by agent at all (it works whatever task
@@ -242,9 +243,10 @@ composites (the app has no name/worker-search of its own); `agents-list` maps
 | `agents-list` | — | — | JSON array of **every** agent definition (`id`, `name`, `tool`, `model`, `thinking_effort`, `order`, `created_at`, `updated_at`) |
 
 - Statuses: `open`, `in_progress`, `blocked`, `completed`.
-- Workers: `none`, `human`, `agent`. An agent task carries its identity in
-  `agent_id` (the agent definition's UUID); `worker_label` is human-only and
-  empty for agent tasks.
+- Workers: writable `none` or `agent`; `human` is a legacy read-only value.
+  An agent task carries its identity in `agent_id` (the agent definition's
+  UUID); `worker_label` is a legacy read-back field (it can still name a
+  stale human claim) and is empty for agent tasks.
 - `effort-by-name` matches the effort's own `name` case-insensitively, exact
   first then substring; `match` is `null` on zero or ambiguous matches.
 - `tasks-by-agent` matches tasks whose `worker` is `"agent"`. When `LC_AGENT_ID`

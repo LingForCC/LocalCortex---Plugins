@@ -107,15 +107,17 @@ has no name-search of its own); the rest map 1:1 to sdef commands.
 |---|---|---|---|
 | `effort-by-name` | — | `LC_NAME` (req), `LC_INCLUDE_ARCHIVED=true` | JSON `{ query, match, candidates }` object |
 | `tasks-get` | `<taskId>` | — | JSON task record **with `notes`** (or not_found `-1002` if the id is unknown) |
-| `task-update` | `<taskId>` | `LC_NAME`, `LC_NOTES`, `LC_STATUS`, `LC_WORKER`, `LC_WORKER_LABEL` | JSON updated task |
+| `task-update` | `<taskId>` | `LC_NAME`, `LC_NOTES`, `LC_STATUS`, `LC_WORKER` (`none` or `agent`) | JSON updated task |
 | `workspace-path` | `<effortId>` | — | JSON string path, or literal `null` |
 | `task-complete` | `<taskId>` | `LC_COMPLETED=false` (default `true`) | JSON task record |
 
 - Statuses: `open`, `in_progress`, `blocked`, `completed`.
-- Workers: `none`, `human`, `agent`. This skill does not filter on `worker` —
-  it works the task id it is given regardless of who owns it. An agent task
-  carries its identity in `agent_id`; `worker_label` is human-only and empty
-  for agent tasks.
+- Workers: writable `none` or `agent`; `human` is a legacy read-only value
+  (the app rejects writing it with `-1001`). This skill does not filter on
+  `worker` — it works the task id it is given regardless of who owns it. An
+  agent task carries its identity in `agent_id`; `worker_label` is a legacy
+  read-back field (it can still name a stale human claim) and is empty for
+  agent tasks.
 - `effort-by-name` matches the effort's own `name` case-insensitively, exact
   first then substring; `match` is `null` on zero or ambiguous matches.
 - On this surface, **nil optional fields are explicit JSON `null`** (e.g.
@@ -197,7 +199,7 @@ are the work to do in Step 5.
 ### Step 4 — Claim the task, then re-read to confirm
 
 Claim the task before doing any work. Claiming only flips the status — do
-**not** set `worker`, `worker_label`, or `agent_id`; the task keeps whatever
+**not** set `worker` or `agent_id`; the task keeps whatever
 assignment it already has (this skill does not care who owns it, and must not
 clobber an existing agent assignment):
 

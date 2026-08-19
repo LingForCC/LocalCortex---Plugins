@@ -291,13 +291,13 @@ function run() {
     case "task-update": {
       // updateTask sdef takes task id (argv, direct param) + any subset of
       // name / notes / status / defer date / due date / recurrence / worker /
-      // worker label / agent id / blockers. Only keys that were provided are
-      // forwarded; absent keys are left unchanged on the app side.
+      // agent id / blockers. Only keys that were provided are forwarded;
+      // absent keys are left unchanged on the app side.
       //
-      // For assigning an app-defined agent, the modern wire is
-      // `LC_WORKER=agent` + `LC_AGENT_ID=<id>` (resolved from the agent name
-      // via agent-by-name / agents-list). `worker label` is human-only as of
-      // 0.3.3 and is ignored for worker agent; prefer the agent id path.
+      // For assigning an app-defined agent, the wire is `LC_WORKER=agent` +
+      // `LC_AGENT_ID=<id>` (resolved from the agent name via agent-by-name /
+      // agents-list). `LC_WORKER` accepts only `none` or `agent` — 0.3.11
+      // rejects `human` (-1001) and deleted the sdef `worker label` param.
       //
       // `blockers` is a list of task-id text on the app side. Entering
       // Blocked REQUIRES blockers — the caller must send LC_STATUS=blocked
@@ -320,8 +320,6 @@ function run() {
       if (status !== undefined) opts.status = status;
       const worker = envOpt("LC_WORKER");
       if (worker !== undefined) opts.worker = worker;
-      const workerLabel = envOpt("LC_WORKER_LABEL");
-      if (workerLabel !== undefined) opts.workerLabel = workerLabel;
       const agentId = envOpt("LC_AGENT_ID");
       if (agentId !== undefined) opts.agentId = agentId;
       const deferDate = envOpt("LC_DEFER_DATE");

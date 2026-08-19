@@ -86,8 +86,9 @@ function findEffortByName(efforts, query) {
 
 // A task is assigned to an agent when its `worker` is "agent". The identity
 // match is by `agent_id` when an agentId is given (the modern wire —
-// app-defined agents set agent_id, not worker_label, which is now human-only
-// for agent tasks); otherwise it falls back to a case-insensitive match
+// app-defined agents set agent_id, not worker_label, which is a legacy
+// read-back field and is empty for agent tasks); otherwise it falls back to
+// a case-insensitive match
 // against `worker_label` (legacy). Orphaned agent tasks (worker == "agent"
 // but agent_id is null) never match an agentId query. By default only active
 // tasks (open / in_progress / blocked) qualify; archived and completed tasks
@@ -186,10 +187,10 @@ function run() {
       if (notes !== undefined) opts.notes = notes;
       const status = envOpt("LC_STATUS");
       if (status !== undefined) opts.status = status;
+      // LC_WORKER accepts only "none" or "agent" — 0.3.11 rejects "human"
+      // (-1001) and deleted the sdef worker-label parameter.
       const worker = envOpt("LC_WORKER");
       if (worker !== undefined) opts.worker = worker;
-      const workerLabel = envOpt("LC_WORKER_LABEL");
-      if (workerLabel !== undefined) opts.workerLabel = workerLabel;
       result = app.updateTask(taskId, opts);
       break;
     }

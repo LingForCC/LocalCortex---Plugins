@@ -18,7 +18,7 @@ exposes twelve scripting commands (`list efforts`, `list templates`,
     [`plugins/localcortex/skills/lc-fetch-effort/SKILL.md`](plugins/localcortex/skills/lc-fetch-effort/SKILL.md).
   - **`lc-start-work`** (`/lc-start-work`) — run **one** autonomous
     pull-work-and-complete tick on demand: find the next **open** task assigned to
-    a given agent (`worker_label`, e.g. `zcode`) in a named Effort, claim it,
+    a given agent (`agent_id`) in a named Effort, claim it,
     do the work, write artifacts into the effort's workspace folder, and
     complete it — one task, then stop. See
     [`plugins/localcortex/skills/lc-start-work/SKILL.md`](plugins/localcortex/skills/lc-start-work/SKILL.md).
