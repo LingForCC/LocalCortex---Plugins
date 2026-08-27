@@ -111,6 +111,7 @@ has no name-search of its own); the rest map 1:1 to sdef commands.
 |---|---|---|---|
 | `effort-by-name` | — | `LC_NAME` (req), `LC_INCLUDE_ARCHIVED=true` | JSON `{ query, match, candidates }` object |
 | `tasks-get` | `<taskId>` | — | JSON task record **with `notes`** (or not_found `-1002` if the id is unknown) |
+| `tasks-list` | `<effortId>` | `LC_INCLUDE_ARCHIVED=true` | JSON flat ordered array of task-summary records — **no `notes`**, `has_notes` hint, statuses included, `parent_id` for tree grouping |
 | `task-update` | `<taskId>` | `LC_NAME`, `LC_NOTES`, `LC_STATUS`, `LC_WORKER` (`none` or `agent`) | JSON updated task |
 | `workspace-path` | `<effortId>` | — | JSON string path, or literal `null` |
 | `task-complete` | `<taskId>` | `LC_COMPLETED=false` (default `true`) | JSON task record |
@@ -128,6 +129,9 @@ has no name-search of its own); the rest map 1:1 to sdef commands.
   `parent_id`, `notes`, `due_date`, `completed_at`, `agent_id`). `has_notes`,
   `is_archived`, `worker`, `worker_label`, `status`, `effort_id` are always
   present.
+- `tasks-list` returns the effort's flat ordered list; grouping records on
+  `parent_id` (JSON `null` = root) reconstructs the tree. An archived effort
+  returns `-1002` unless `LC_INCLUDE_ARCHIVED=true`.
 
 ### Errors
 
@@ -222,6 +226,26 @@ work a task you do not own.
 The task record's `name` (the title) and `notes` describe the work. The
 `notes` are the instructions; the `name` is the summary.
 
+**Before the workspace folder, understand where this task sits — three cheap
+reads, each best-effort (a missing or empty record is not an error):**
+
+1. **Parent** — if `parent_id` is non-null, `tasks-get` it and read its
+   name + notes: the group brief. Expect notes to be empty (common); the
+   siblings below are usually where the real context lives.
+2. **Blockers** — for each id in `blocker_ids`, `tasks-get` it and read its
+   notes: upstream input or output to build on. Tolerate `-1002` (a stale
+   edge to a deleted task) — note it and continue.
+3. **Siblings** — `tasks-list "$EFFORT_ID"` once, then filter client-side:
+   records whose `parent_id` equals this task's (or, for a root task, the
+   other roots). Of those, `tasks-get` **completed** siblings whose
+   `has_notes` is true — at most the **5 most recent by `completed_at`** —
+   and read their completion notes: prior-round findings, artifact links,
+   conventions to match. This channel, not the parent's notes, is where
+   cross-round context actually flows.
+
+Do **not** enumerate children of the task at hand — reading context is not
+absorbing a subtree, and the one-task contract stands.
+
 **Resolve the Effort's workspace folder once and read relevant context from it
 before starting:**
 
@@ -269,6 +293,15 @@ retry blindly** — the task (or a descendant) has an incomplete blocker; leave
 the task `in_progress` and stop. Tell the user; they (or another run) can pick
 it up once the blocker is resolved.
 
+If completion succeeded and `parent_id` is non-null, re-run
+`tasks-list "$EFFORT_ID"` and look at this task's sibling group (same
+`parent_id`, excluding this task). Every sibling `completed` → the final
+report gains the line: **"parent X: all subtasks complete — yours to
+close"** (X = the parent's name). Otherwise → "parent X: N open subtask(s)
+remain". One extra list call; it makes the human's close-the-rollup job
+visible instead of silent (completing subtasks never auto-completes the
+parent — by design).
+
 ### Step 7 — One task, then stop
 
 After completing one task, **stop**. Do not loop to another task in the same
@@ -296,5 +329,7 @@ Report plainly: the effort (name + id), the task (title + id), and the
 outcome — that you worked and completed it (a one-line summary of what you
 did), or that you could not (the task id was not found, was not in this
 effort, was not open, or could not be completed e.g. due to an incomplete
-blocker — in which case it is left `in_progress`). No recurring job is created
+blocker — in which case it is left `in_progress`). When the task's sibling
+group just finished, the report ends with the parent close-out line (Step 6).
+No recurring job is created
 by this skill, so there is nothing to "stop".

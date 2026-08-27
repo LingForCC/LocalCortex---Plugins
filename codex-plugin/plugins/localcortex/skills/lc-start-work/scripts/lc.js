@@ -7,7 +7,10 @@
  * operations an autonomous "work a caller-chosen task → complete it" run needs.
  * The composite `effort-by-name` is the same client-side filter used by the
  * `lc-fetch-effort` sibling (the app has no name-search command of its own);
- * `tasks-get`, `task-update`, and `task-complete` map 1:1 to sdef commands.
+ * `tasks-get`, `tasks-list`, `task-update`, and `task-complete` map 1:1 to sdef
+ * commands. `tasks-list` exists for structure context: a headless worker
+ * discovers its parent, blockers, and completed siblings by grouping the flat
+ * list on `parent_id` before it starts working.
  * The point of bundling them here is that a scheduled run is headless — it
  * must not chain sibling skills to get its work done, so this one helper is
  * self-contained.
@@ -112,6 +115,18 @@ function run() {
       result = app.getTask(taskId);
       break;
     }
+    case "tasks-list": {
+      const effortId = positional[0];
+      if (!effortId) throw new Error("usage: lc.js tasks-list <effortId>");
+      // Verbatim passthrough of the sdef `list tasks` result: the app's flat,
+      // ordered JSON array of task-summary records (no notes; has_notes hint;
+      // completed included; grouping on parent_id reconstructs the tree).
+      // Caller filters client-side.
+      result = app.listTasks(effortId, {
+        includeArchived: envOpt("LC_INCLUDE_ARCHIVED") === "true",
+      });
+      break;
+    }
     case "task-update": {
       const taskId = positional[0];
       if (!taskId) throw new Error("usage: lc.js task-update <taskId>");
@@ -149,7 +164,7 @@ function run() {
     default:
       throw new Error(
         "unknown subcommand: '" + cmd + "'. Expected one of: " +
-          "effort-by-name, tasks-get, task-update, workspace-path, task-complete."
+          "effort-by-name, tasks-get, tasks-list, task-update, workspace-path, task-complete."
       );
   }
 
