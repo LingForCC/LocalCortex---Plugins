@@ -7,10 +7,14 @@
  * operations an autonomous "work a caller-chosen task → complete it" run needs.
  * The composite `effort-by-name` is the same client-side filter used by the
  * `lc-fetch-effort` sibling (the app has no name-search command of its own);
- * `tasks-get`, `tasks-list`, `task-update`, and `task-complete` map 1:1 to sdef
- * commands. `tasks-list` exists for structure context: a headless worker
- * discovers its parent, blockers, and completed siblings by grouping the flat
- * list on `parent_id` before it starts working.
+ * `tasks-get`, `tasks-list`, `task-create`, `task-update`, and `task-complete`
+ * map 1:1 to sdef commands. `tasks-list` exists for structure context: a
+ * headless worker discovers its parent, blockers, and completed siblings by
+ * grouping the flat list on `parent_id` before it starts working. The
+ * stuck-report path — create a sibling placeholder `before` the target, enter
+ * blocked with `blockers`, flag Today — needs app ≥ 0.4.7 for the
+ * `before` / `flaggedToday` parameters; on an older app those calls fail and
+ * the caller degrades per the skill's degradation ladder.
  * The point of bundling them here is that a scheduled run is headless — it
  * must not chain sibling skills to get its work done, so this one helper is
  * self-contained.
@@ -92,6 +96,21 @@ function findEffortByName(efforts, query) {
   return { match: null, candidates: substring.length ? substring : null };
 }
 
+// Parse a comma-separated list of task ids ("id1,id2,id3") into a JS array,
+// trimming whitespace and dropping empty segments. Returns null when the
+// caller did not provide LC_BLOCKERS at all (so the helper can omit the key
+// and leave blockers unchanged on the app side).
+function parseBlockerList(raw) {
+  if (raw === undefined) return null;
+  const out = [];
+  const parts = String(raw).split(",");
+  for (let i = 0; i < parts.length; i++) {
+    const id = parts[i].trim();
+    if (id) out.push(id);
+  }
+  return out;
+}
+
 // --- dispatch -----------------------------------------------------------
 function run() {
   const app = Application("LocalCortex");
@@ -141,7 +160,47 @@ function run() {
       // (-1001) and deleted the sdef worker-label parameter.
       const worker = envOpt("LC_WORKER");
       if (worker !== undefined) opts.worker = worker;
+      // Blockers (stuck-report path): entering Blocked REQUIRES blockers —
+      // the caller must send LC_STATUS=blocked and LC_BLOCKERS=<ids> in the
+      // same call. LC_CLEAR_BLOCKERS=true sends an empty list (the sdef
+      // revert path that clears blockers and reverts a Blocked task to
+      // open). LC_BLOCKERS wins over LC_CLEAR_BLOCKERS if both are set.
+      const blockers = parseBlockerList(envOpt("LC_BLOCKERS"));
+      if (blockers !== null) {
+        opts.blockers = blockers;
+      } else if (envOpt("LC_CLEAR_BLOCKERS") === "true") {
+        opts.blockers = [];
+      }
+      // Strict boolean flag (app ≥ 0.4.7), mirroring the app's own -1001 on
+      // a non-boolean `flagged today` — fail loud, never a silent no-op.
+      const flagRaw = envOpt("LC_FLAGGED_TODAY");
+      if (flagRaw !== undefined) {
+        if (flagRaw === "true") opts.flaggedToday = true;
+        else if (flagRaw === "false") opts.flaggedToday = false;
+        else throw new Error("LC_FLAGGED_TODAY must be 'true' or 'false'");
+      }
       result = app.updateTask(taskId, opts);
+      break;
+    }
+    case "task-create": {
+      // createTask sdef: in-effort / with-name (required), optional notes /
+      // parent / before. No worker param on create — a new task defaults to
+      // worker=none. Omit parent entirely when LC_PARENT_ID is unset so a
+      // ROOT task is created. `before` (app ≥ 0.4.7) splices the new task
+      // directly above the anchor task in the anchor's own sibling group;
+      // on an older app the call fails and the caller retries without it.
+      const effortId = positional[0];
+      if (!effortId) throw new Error("usage: lc.js task-create <effortId>");
+      const name = envStr("LC_NAME");
+      if (!name) throw new Error("LC_NAME is required for task-create");
+      const opts = { inEffort: effortId, withName: name };
+      const notes = envOpt("LC_NOTES");
+      if (notes !== undefined) opts.notes = notes;
+      const parent = envOpt("LC_PARENT_ID");
+      if (parent !== undefined) opts.parent = parent;
+      const before = envOpt("LC_BEFORE_ID");
+      if (before !== undefined) opts.before = before;
+      result = app.createTask(opts);
       break;
     }
     case "workspace-path": {
@@ -164,7 +223,8 @@ function run() {
     default:
       throw new Error(
         "unknown subcommand: '" + cmd + "'. Expected one of: " +
-          "effort-by-name, tasks-get, tasks-list, task-update, workspace-path, task-complete."
+          "effort-by-name, tasks-get, tasks-list, task-update, task-create, " +
+          "workspace-path, task-complete."
       );
   }
 

@@ -65,8 +65,11 @@ hands each spawned worker one of these prompts with a concrete task id.
 ## Prerequisites
 
 - The **LocalCortex** macOS app is installed and built with the AppleScript/JXA
-  surface (sdef commands used: `list efforts`, `get task`, `update task`,
-  `complete task`, `workspace path`). Apple Events auto-launch the app if it
+  surface (sdef commands used: `list efforts`, `get task`, `list tasks`,
+  `create task`, `update task`, `complete task`, `workspace path`; `create
+  task`'s `before` / `flagged today` parameters and the `is_flagged_today`
+  record field need LocalCortex ≥ 0.4.7 — the stuck-reporting protocol
+  degrades on older apps). Apple Events auto-launch the app if it
   isn't running — no "is the server up" check needed.
 - The **first call from the OpenCode host binary triggers a one-time macOS TCC
   prompt** ("*… wants to control LocalCortex*"). After the user grants it,
@@ -112,7 +115,8 @@ has no name-search of its own); the rest map 1:1 to sdef commands.
 | `effort-by-name` | — | `LC_NAME` (req), `LC_INCLUDE_ARCHIVED=true` | JSON `{ query, match, candidates }` object |
 | `tasks-get` | `<taskId>` | — | JSON task record **with `notes`** (or not_found `-1002` if the id is unknown) |
 | `tasks-list` | `<effortId>` | `LC_INCLUDE_ARCHIVED=true` | JSON flat ordered array of task-summary records — **no `notes`**, `has_notes` hint, statuses included, `parent_id` for tree grouping |
-| `task-update` | `<taskId>` | `LC_NAME`, `LC_NOTES`, `LC_STATUS`, `LC_WORKER` (`none` or `agent`) | JSON updated task |
+| `task-update` | `<taskId>` | `LC_NAME`, `LC_NOTES`, `LC_STATUS`, `LC_WORKER` (`none` or `agent`), `LC_BLOCKERS` (comma-separated ids), `LC_CLEAR_BLOCKERS=true`, `LC_FLAGGED_TODAY` (`true`/`false`, ≥ 0.4.7) | JSON updated task |
+| `task-create` | `<effortId>` | `LC_NAME` (req), `LC_NOTES`, `LC_PARENT_ID`, `LC_BEFORE_ID` (≥ 0.4.7) | JSON task record |
 | `workspace-path` | `<effortId>` | — | JSON string path, or literal `null` |
 | `task-complete` | `<taskId>` | `LC_COMPLETED=false` (default `true`) | JSON task record |
 
@@ -123,6 +127,10 @@ has no name-search of its own); the rest map 1:1 to sdef commands.
   agent task carries its identity in `agent_id`; `worker_label` is a legacy
   read-back field (it can still name a stale human claim) and is empty for
   agent tasks.
+- Entering Blocked requires `LC_STATUS=blocked` + `LC_BLOCKERS` in the same
+  `task-update` call; `LC_CLEAR_BLOCKERS=true` sends the empty list (the
+  revert path that clears blockers and returns the task to `open`);
+  `LC_BLOCKERS` wins over `LC_CLEAR_BLOCKERS` if both are set.
 - `effort-by-name` matches the effort's own `name` case-insensitively, exact
   first then substring; `match` is `null` on zero or ambiguous matches.
 - On this surface, **nil optional fields are explicit JSON `null`** (e.g.
@@ -290,7 +298,11 @@ Completion also completes the subtask subtree, auto-unblocks tasks waiting on
 it, and spawns a fresh open copy if the task carries a recurrence rule. If it
 fails with `-1001` and a "Cannot complete — blocked by …" message, **do not
 retry blindly** — the task (or a descendant) has an incomplete blocker; leave
-the task `in_progress` and stop. Tell the user; they (or another run) can pick
+the task `in_progress` and stop, then run the stuck-reporting protocol's
+guard (step 0 below): re-read the task — a `-1001` "Cannot complete — blocked
+by …" means an incomplete blocker already exists, so the guard's
+already-blocked branch applies (banner + report only, **no second
+placeholder**). Tell the user; they (or another run) can pick
 it up once the blocker is resolved.
 
 If completion succeeded and `parent_id` is non-null, re-run
@@ -308,6 +320,61 @@ After completing one task, **stop**. Do not loop to another task in the same
 invocation — if the caller wants more, it can invoke this skill again (with a
 new task id), or use `lc-start-job` for a recurring worker. Report what you did.
 
+## When the run gets stuck — fail-safe reporting protocol
+
+**Trigger**: any **post-claim** failure — the work itself errored, or
+`task-complete` failed other than via a pre-existing blocker. Pre-claim stops
+(task id unknown, wrong effort, task not open, claim did not take) leave the
+task untouched and report plainly — this protocol never fires there.
+
+Ordered — cheapest-and-almost-unbreakable first, so a failure partway through
+degrades gracefully:
+
+0. **Guard — no double-reporting.** Re-read the task (`tasks-get`). Already
+   `blocked` → banner + report only, **no second placeholder** (its blocker
+   already exists; e.g. the Step 6 `-1001` path lands here). `in_progress` →
+   full protocol. Use this fresh record's `notes` as the base for the banner
+   (the Step 3 snapshot may be stale).
+1. **Banner the task notes** — prepend to the existing notes (notes replace
+   wholesale, so send `banner + "\n\n" + existing`):
+   `⚠️ AGENT STUCK (timestamp) — reason / done so far / artifacts / resume
+   hint / placeholder id once known / report-file path once known`.
+2. **Write the workspace report** — create or append an episode section to
+   `stuck-report-<TASK_ID>.md` in the effort workspace (only when
+   `workspace-path` returned non-`null`; otherwise the banner carries
+   everything).
+3. **Create the placeholder as a sibling directly above** — `task-create`
+   with `LC_NAME='🔔 Agent stuck: <task name> — human input needed'`,
+   `LC_NOTES` = the full report, `LC_PARENT_ID` = the target's `parent_id`
+   (unset for a root target), `LC_BEFORE_ID` = the target id.
+4. **Propagate Today** — if the target's `is_flagged_today` is true (absent
+   field = false, i.e. app < 0.4.7) → `task-update <placeholder>` with
+   `LC_FLAGGED_TODAY=true`.
+5. **Enter blocked atomically, banner amended** — one `task-update <target>`
+   call with `LC_STATUS=blocked` + `LC_BLOCKERS=<placeholder id>` + `LC_NOTES`
+   = banner now carrying the placeholder id and report path (banner +
+   "\n\n" + the same existing notes). Re-read and confirm. Legal as one
+   call — status/blockers/notes are independent fields.
+6. **Stop** — never complete unfinished work.
+
+**Guards**: exactly one *open* placeholder per stuck task; a
+re-stuck-after-resume episode creates a fresh one (the old is completed) and
+appends to the same report file; normal completion's Step 5 notes update
+replaces the banner wholesale (it drops naturally); completed 🔔 placeholders
+remain as audit trail.
+
+**Degradation ladder** (steps 3–5 use ≥ 0.4.7-only surface parameters):
+banner + report always run first; if `task-create` rejects `LC_BEFORE_ID`
+(older app / arg error) → retry the create **without** it (append position;
+the flag is still attempted); if the flag update rejects → skip it
+(non-fatal); if the placeholder create itself fails → banner + report only.
+The banner records whatever happened.
+
+**Resolution**: the human reads the banner/report, resolves, then completes
+(or deletes) the placeholder — completing a blocker reverts the target to
+`open` (the same revert path as `LC_CLEAR_BLOCKERS`), so the next run/tick
+re-claims it; deleting the placeholder drops the blocker edge the same way.
+
 ## Notes for the run
 
 - **Make reasonable assumptions.** Unlike a fully headless scheduled tick, you
@@ -317,9 +384,9 @@ new task id), or use `lc-start-job` for a recurring worker. Report what you did.
 - **Do not create follow-up tasks.** This run completes the task it was handed;
   it does not create follow-up siblings. If a task clearly needs follow-up, say
   so in the task notes and leave it at that.
-- **Fail safe.** If the run errors mid-work after the task was claimed, leave
-  the task `in_progress` and stop — do not complete a task whose work did not
-  finish. Tell the user so they (or another run) can pick it up.
+- **Fail safe.** On any post-claim failure, run the stuck-reporting protocol
+  (section above) instead of stopping silently — never complete unfinished
+  work.
 
 ---
 
