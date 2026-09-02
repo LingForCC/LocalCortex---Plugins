@@ -43,8 +43,12 @@ exposes twelve scripting commands (`list efforts`, `list templates`,
     worker spawn, but **no scheduled automation**. Instead it loops in the
     current session — dispatching one open task per supported agent each round,
     waiting for all workers, and re-checking — until no supported agent has any
-    active task, then stops on its own. Use for one-shot, run-to-completion
-    delegation. See
+    active task, then stops on its own. Each dispatched task honors its
+    `run_as` field (read from the app): `headless` (the default) spawns the
+    agent's CLI headless; `subagent` runs the task as an **in-session subagent
+    via the Agent tool** when the agent's `tool` is this session's own CLI
+    (`zcode`), falling back to headless otherwise. Use for one-shot,
+    run-to-completion delegation. See
     [`plugins/localcortex/skills/lc-orchestrate-agent-goal/SKILL.md`](plugins/localcortex/skills/lc-orchestrate-agent-goal/SKILL.md).
   - **`lc-skill-creator`** (`/lc-skill-creator`) — a meta-skill that creates or
     revises other `lc-*` skills. The authoritative guide to the full
