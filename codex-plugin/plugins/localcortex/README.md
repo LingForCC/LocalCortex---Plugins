@@ -19,7 +19,12 @@ required.
   multi-agent orchestration in the current Codex session until the Effort's
   supported agent work is complete. It dispatches one open task per agent in
   parallel, waits for workers, re-reads LocalCortex, and wait-polls while work
-  remains blocked or in progress. It creates no Scheduled task. See
+  remains blocked or in progress. Each dispatched task honors its `run_as`
+  field (read from the app): `headless` (the default) spawns the agent's CLI
+  headless; `subagent` runs the task as an **in-session subagent via the
+  spawn_agent tool** when the agent's `tool` is this session's own CLI
+  (`codex`), falling back to headless otherwise.. It creates no Scheduled
+  task. See
   [`skills/lc-orchestrate-agent-goal/SKILL.md`](skills/lc-orchestrate-agent-goal/SKILL.md).
 - **`lc-orchestrate-agents`** (`$lc-orchestrate-agents`) — create a Codex
   Scheduled task that polls an Effort every 5 minutes. Each tick re-reads the

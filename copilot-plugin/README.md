@@ -15,7 +15,9 @@ The **`localcortex`** plugin ships six skills:
 - **`lc-orchestrate-agents`** (`/lc-orchestrate-agents`) — set up repeated
   delegation across supported agent CLIs to complete open Effort tasks.
 - **`lc-orchestrate-agent-goal`** (`/lc-orchestrate-agent-goal`) — one-shot
-  goal-mode delegation until all supported agents are idle.
+  goal-mode delegation until all supported agents are idle; each dispatched
+  task honors its app-set `run_as` (headless CLI spawn, or in-session
+  subagent via the task tool for a `copilot` agent).
 - **`lc-start-work`** (`/lc-start-work`) — claim and complete one selected task.
 - **`lc-skill-creator`** (`/lc-skill-creator`) — author or revise additional
   `lc-*` skills and JXA call patterns.

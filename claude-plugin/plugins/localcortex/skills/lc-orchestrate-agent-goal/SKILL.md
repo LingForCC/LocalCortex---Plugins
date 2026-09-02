@@ -2,21 +2,22 @@
 name: lc-orchestrate-agent-goal
 description: >-
   Run a LocalCortex multi-agent orchestrator in goal mode — the macOS task
-  manager app — that loops in the current session (no scheduled automation)
-  and dispatches each app-defined agent's open work until the effort is done.
-  Like lc-orchestrate-agents, it reads the roster, model, and thinking effort
-  FROM THE APP (`list agents`) — the user supplies only the Effort and a
-  working directory. Each loop iteration re-reads the roster and, for each
-  supported agent (opencode, kimi, codex, claude code, copilot) with an open
-  task, picks one task and spawns its CLI headless with a one-line prompt
-  telling it to run lc-start-work for that task's id. After each round it
-  re-checks: if any supported agent still has an active task it loops again,
-  and when none remain it stops on its own. Drives LocalCortex through its JXA/AppleScript
-  surface (osascript), not MCP. Use for one-shot, run-to-completion multi-agent
-  delegation — e.g. "orchestrate all agents on Build until done".
+  manager app — looping in the current session (no scheduled automation) until
+  every app-defined agent's open work is done. Reads the roster, models, and
+  thinking efforts FROM THE APP; the user supplies only the Effort and a
+  working directory. Each round, for each supported agent (opencode, kimi,
+  codex, claude code, copilot) with an open task, it picks one task and
+  honors its `run_as`: `headless` (the default) spawns the agent's CLI
+  headless; `subagent` runs the work as an in-session subagent via the Task
+  tool when the agent's tool is this session's own CLI, else falls back to
+  headless — each with a one-line prompt to run lc-start-work for that task
+  id. Loops until no active tasks remain, then stops. Drives LocalCortex
+  through its JXA/AppleScript surface (osascript), not MCP. Use for one-shot,
+  run-to-completion multi-agent delegation — e.g. "orchestrate all agents on
+  Build until done".
 argument-hint: "[effort name]"
-allowed-tools: [Bash, Read]
-version: 0.1.0
+allowed-tools: [Task, Bash, Read]
+version: 0.1.2
 license: MIT
 ---
 
@@ -46,8 +47,12 @@ idle no-ops forever — just run-to-completion.
 The orchestrator is a **thin gatekeeper**: each round runs cheap `osascript`
 checks for each agent and only spawns a worker when there is an open task for
 that agent. It does **not** do the task work itself — it farms each task out to a
-fresh headless worker that runs the **`lc-start-work`** skill for a specific
-**task id**.
+fresh worker that runs the **`lc-start-work`** skill for a specific
+**task id**. Which *kind* of worker is per-task, read from the app: each picked
+task's **`run_as`** field says whether it runs **headless** (spawn the agent's
+CLI, the existing behavior and the default) or as a **subagent** (run the work
+in this session with the **Task tool**) — see
+[Per-task run mode](#per-task-run-mode-run_as-headless-vs-subagent-read-this-first).
 
 The **agent roster is read from the app**, not supplied by the user. At setup the
 user provides only the **Effort name** and a **working directory**; the skill
@@ -85,21 +90,27 @@ This skill does **not** ask the user for agents, models, or efforts. It reads
   (not per-effort) and sync via CloudKit.
 - **`tool` → CLI mapping** (case-insensitive substring of the `tool` field):
 
-  | `tool` contains | spawned CLI |
+  | `tool` contains | spawned CLI | dispatchable run modes |
   |---|---|
-  | `opencode` | `opencode` |
-  | `kimi` | `kimi` |
-  | `codex` | `codex` |
-  | `claude` | `claude code` |
-  | `copilot` | `copilot` |
-  | anything else (e.g. `zcode`) | **unsupported — skipped** |
+  | `opencode` | `opencode` | headless (subagent falls back to headless) |
+  | `kimi` | `kimi` | headless (subagent falls back to headless) |
+  | `codex` | `codex` | headless (subagent falls back to headless) |
+  | `claude` | `claude code` | headless, or in-session subagent via the **Task tool** on a `subagent` task |
+  | `copilot` | `copilot` | headless (subagent falls back to headless) |
+  | anything else (e.g. `zcode`) | **unsupported — skipped** | — |
 
   So `"opencode"`, `"kimi code"`, `"codex"`, `"claude code"`, and `"copilot"`
-  all map correctly; `"zcode"` is skipped (no spawnable headless CLI is known
-  for it here).
+  all map correctly and dispatch headless by default (a foreign CLI's
+  `subagent` task falls back to headless — it cannot run as a subagent of this
+  session). `claude code` maps to **this session itself**: those agents dispatch
+  through the **Task tool** when the picked task's `run_as` is `subagent` (see
+  [Per-task run mode](#per-task-run-mode-run_as-headless-vs-subagent-read-this-first)).
 - **`model`** and **`thinking_effort`** are applied to opencode, kimi, codex,
-  claude code, and copilot spawns
+  claude code, and copilot headless spawns
   (see [Model & thinking-effort support](#model--thinking-effort-support-read-this-first)).
+  For `claude code` subagent dispatches they are stated in the subagent prompt as
+  the agent profile — advisory, since a subagent inherits this session's
+  model.
 
 Each agent's **tasks** are matched by **`agent_id`** (the agent record's `id`
 UUID), not by `worker_label`. As of the app's agent-worker feature, an
@@ -114,8 +125,9 @@ id it is given).
 ## Model & thinking-effort support (read this first)
 
 The headless CLIs expose model and thinking-effort selection via flags / env.
-Each agent's `model` / `thinking_effort` (read from the app) is applied to all
-five supported CLIs.
+Each agent's `model` / `thinking_effort` (read from the app) is applied to the
+five headless CLIs; the `claude code` subagent row below carries them in the prompt
+instead (advisory — a subagent inherits this session's model).
 
 | agent type (from `tool`) | model (headless) | thinking effort (headless) |
 |---|---|---|
@@ -123,14 +135,75 @@ five supported CLIs.
 | **kimi** | ✅ `-m <alias>` | ✅ env `KIMI_MODEL_THINKING_EFFORT=<low\|medium\|high\|max>` |
 | **codex** | ✅ `-m <model>` | ✅ `-c model_reasoning_effort=<minimal\|low\|medium\|high\|xhigh>` |
 | **claude code** | ✅ `--model <alias-or-id>` | ✅ `--effort <low\|medium\|high\|xhigh\|max\|ultracode>` |
+| **claude code** (subagent) | ➖ stated in the subagent prompt (advisory; inherits this session's model) | ➖ stated in the subagent prompt (advisory) |
 | **copilot** | ✅ `--model <model-or-auto>` | ✅ `--effort`, `--reasoning-effort <none\|minimal\|low\|medium\|high\|xhigh\|max>` — requires an explicit effort-capable model; `auto` rejects it |
+
+## Per-task run mode (`run_as`): headless vs subagent (read this first)
+
+Each **task** carries a **`run_as`** field saying how its claimed agent should
+run: **`headless`** (the default) or **`subagent`**. The user sets it in the
+app's task detail pane (the "Run As" picker beside the agent picker) or over
+the wire (`update task … run as`). It is **claim-scoped**: default `headless`
+at birth, reset to `headless` whenever the claim is cleared or the task
+completes. Current app builds always emit `run_as` as a non-null string on
+task records; **older builds omit it — a missing / null / empty `run_as` (or
+any unrecognized value) is treated as `headless`**, which is exactly the
+pre-existing behavior, so nothing changes for old apps or old tasks.
+
+The orchestrator reads `run_as` off the **picked open task's record** (the
+`tasks-by-agent` results carry it — those records pass through `list tasks`
+verbatim) and branches:
+
+| picked task's `run_as` | agent CLI | dispatch |
+|---|---|---|
+| missing / null / empty / `"headless"` / unknown | any supported CLI | **headless CLI spawn** — the existing behavior, unchanged |
+| `"subagent"` | `claude code` — this session's own CLI | **in-session subagent** via the **Task tool** — the compatible case |
+| `"subagent"` | `opencode` / `kimi` / `codex` / `copilot` | **fall back to headless** — the compatibility rule |
+
+**The compatibility rule:** `subagent` means "run this task *inside the
+current session*, with this session's own subagent mechanism, using the
+agent's assigned model and effort". That is only possible when the agent's
+`tool` **is the CLI this session is running as** — in this (Claude Code) plugin,
+that means a `claude`-tool agent. Any other tool cannot run as a subagent of
+this session, so its `subagent` tasks fall back to the headless spawn that
+tool already supports. (Symmetrically, in another host's plugin the session
+tool would be that host's CLI; here it is `claude code`.)
+
+### How a subagent dispatch works
+
+- Spawn it with the **Task tool** — a fresh agent with full tools, able to load and
+  run the **`lc-start-work`** skill from this same plugin. Give it a short,
+  self-contained label/description and the **subagent worker prompt** (see
+  [Worker prompt](#worker-prompt)) filled in with the effort name, the picked
+  task id, and the agent profile (`model` / `thinking_effort` from
+  `list agents`).
+- **Model and thinking effort are stated in the prompt, not selected**: the
+  subagent inherits this session's model, and the assigned `model` /
+  `thinking_effort` ride in the prompt as the agent profile, advisory.
+- **No cwd flag** — the subagent inherits this session's working directory.
+  The orchestrator's cwd (confirmed at setup) is the subagent's cwd; there is
+  no `--dir` / `-C` equivalent to pass.
+- **Parallel, wait-for-all, one per agent per round** — the same discipline as
+  the bash `&` + `wait` pattern: launch each round's subagents first, run the
+  bash block that spawns and `wait`s for the CLI workers, then block on each
+  subagent's result before starting the next round. A subagent-only round can
+  issue all its subagent spawns together — they run concurrently and their
+  results return together.
+- **Failure handling is the same as a failed CLI worker**: a subagent that
+  errors or returns without completing leaves its task `open` (or
+  `in_progress` if it died mid-work). Do not retry it in the same round, do
+  not complete anything on its behalf — the next round reconsiders it.
+- **No login prerequisite** — a subagent runs inside this session, so the
+  headless-CLI logins (`opencode auth login`, `kimi login`, `codex login`,
+  `claude auth login`, `copilot login`) do not apply to it.
 
 ## When to use this skill
 
 When the user wants **one-shot, run-to-completion multi-agent delegation** — one
 or more app-defined agents working a LocalCortex Effort **until it is done**, in
 a single long-running session, where each round *farms the actual work out to
-fresh headless workers* rather than doing it in-process. Examples: "orchestrate
+fresh workers* (headless CLI processes, or in-session subagents per each
+task's `run_as`) rather than doing it in-process. Examples: "orchestrate
 all my agents on the Build effort until done", "drive every open agent task on
 Payments to completion now", "run all my agents on Launch and stop when there's
 nothing left".
@@ -182,21 +255,28 @@ This skill does **two things**:
   busy for the duration, and that they can interrupt the run at any time (the
   worst case is a task left `in_progress` by a worker that was killed mid-work,
   which a later run or human can pick up).
+- **For per-task run modes, run an app build that emits `run_as`** (the
+  agent-run-mode feature). Older builds omit the field and every task then
+  behaves as `headless` — the pre-existing behavior, so nothing breaks, but no
+  task can dispatch as a subagent until the app is updated.
 - **At least one supported agent is defined in the app.** Agents are created in
   the app's Settings (or via `create agent`); each agent's `tool` must map to
   one of the supported CLIs (opencode / kimi / codex / claude code /
-  copilot). If no agent is defined, or none maps to a supported CLI, the
-  skill does nothing and tells the user.
-- **The spawned worker CLIs are installed and logged in.** Workers run headless,
-  so they cannot prompt for login mid-run. Each supported agent has its own
+  copilot — a `claude` agent dispatches headless by default, or in-session via
+  the **Task tool** on a `subagent` task). If no agent is defined, or none maps to a
+  supported CLI, the skill does nothing and tells the user.
+- **The spawned worker CLIs are installed and logged in.** Headless workers
+  cannot prompt for login mid-run. Each supported headless agent has its own
   one-time login: `kimi login`, `opencode auth login`, `codex login`,
   `claude auth login` (or `claude setup-token` for a long-lived scripting
   token), `copilot login` (or a `COPILOT_GITHUB_TOKEN` env token for
   headless scripting). Tell the user to run the relevant logins once before
   relying on this
-  automation.
+  automation. (In-session `claude code` subagents need no login — they run
+  inside this session.)
 - **The `lc-start-work` skill is installed** for every spawned agent (in that
   agent's plugin cache). The delegation prompt assumes the worker can load it.
+  (A `claude code` subagent loads it from this same plugin's cache.)
 - **For opencode agents**, models are referenced as `<provider>/<model>` (e.g.
   `zhipuai-coding-plan/glm-5.2`). The model comes from each agent's `model`
   field; if a round fails for that agent, check that the model is usable under
@@ -232,7 +312,10 @@ This skill does **two things**:
 
 Only agents whose `tool` maps to one of these CLIs can be delegated to (see the
 [`tool` → CLI mapping](#how-agents-are-identified-read-this-first)). Anything
-else → **do not spawn; skip it and report why**.
+else → **do not spawn; skip it and report why**. Every supported CLI runs
+headless by default (a foreign CLI's `subagent` task falls back to headless —
+it cannot run as a subagent of this session); `claude code` additionally dispatches
+**in-session**, via the **Task tool**, when the picked task's `run_as` is `subagent`.
 
 | type | spawn command (headless) |
 |---|---|
@@ -240,6 +323,7 @@ else → **do not spawn; skip it and report why**.
 | `kimi` | `cd "<CWD>" && KIMI_MODEL_THINKING_EFFORT=<effort> kimi -m <model> -p "<worker prompt>"` (model via `-m`; thinking effort via the env var; `-p` prompt mode is already non-interactive and auto-approves tool calls — do **not** add `-y`/`--yolo` or `--auto`, they are incompatible with `-p` on kimi ≥ 0.34.0) |
 | `codex` | `cd "<CWD>" && codex exec -m <model> -c model_reasoning_effort=<effort> --dangerously-bypass-approvals-and-sandbox "<worker prompt>"` (`codex exec` runs headless to completion; model via `-m`; reasoning effort via `-c model_reasoning_effort=`; `--dangerously-bypass-approvals-and-sandbox` is yolo — skips all confirmation prompts and executes commands without sandboxing; cwd is set by `cd`, since `codex exec` otherwise requires the cwd to be a git repo. Omit `-m` / `-c …` when the agent's `model` / `thinking_effort` is empty) |
 | `claude code` | `cd "<CWD>" && claude -p --model <model> --effort <effort> --dangerously-skip-permissions "<worker prompt>"` (`-p` is non-interactive print mode; model via `--model` alias or id; thinking effort via `--effort`; `--dangerously-skip-permissions` is yolo — skips all permission prompts; cwd is set by `cd` — claude has no cwd flag. Omit `--model` / `--effort` when the agent's `model` / `thinking_effort` is empty) |
+| `claude code` (in-session subagent) | Task tool call: `subagent_type: general-purpose` — `description: "<agent name> worker: <task id>"`, `prompt: <subagent worker prompt>` (see [Per-task run mode](#per-task-run-mode-run_as-headless-vs-subagent-read-this-first)). No cwd flag (inherits this session's cwd); model / thinking effort are stated in the prompt as the agent profile. Dispatched instead of the headless spawn when the picked task's `run_as` is `subagent` |
 | `copilot` | `copilot -C "<CWD>" --model <model> --effort <effort> --yolo -s --no-ask-user -p "<worker prompt>"` (`-p` is non-interactive prompt mode and exits after completion; model via `--model` id or `auto`; thinking effort via `--effort` — alias `--reasoning-effort`; `--yolo` is yolo — auto-approves all tools, paths, and URLs (tool auto-approval is required in non-interactive mode, where permission prompts cannot be answered); cwd is set by `-C`; `-s` outputs only the agent response; `--no-ask-user` disables clarifying questions. Omit `--model` / `--effort` when the agent's `model` / `thinking_effort` is empty; also omit `--effort` whenever `--model` is omitted or `auto` — model `auto` rejects reasoning-effort configuration and exits non-zero) |
 
 The **worker prompt** is the same one-sentence instruction for every agent,
@@ -299,9 +383,14 @@ composites (the app has no name/worker-search of its own); `agents-list` maps
   `in_progress`, `blocked`) are returned.
 - `agents-list` is the raw `list agents` view: every agent definition the app
   knows about, regardless of `tool`. The orchestrator maps each record's `tool`
-  to a spawnable CLI; unsupported ones are skipped and reported.
+  to a dispatchable runner (headless CLI or session subagent); unsupported
+  ones are skipped and reported.
 - On this surface, **nil optional fields are explicit JSON `null`**. `status`,
-  `worker`, `worker_label`, `agent_id`, `is_archived` are always present.
+  `worker`, `worker_label`, `agent_id`, `is_archived` are always present. The
+  task records inside `tasks-by-agent` pass `list tasks` through verbatim, so
+  on an app build with the agent-run-mode feature they also carry `run_as`
+  (`"headless"` / `"subagent"`, never null); on older builds it is absent —
+  treat that as `headless`.
 
 ### Errors
 
@@ -385,6 +474,8 @@ osascript -l JavaScript "$LC_JS" agents-list
     Build two lists:
     - **Supported agents** — one entry per agent whose `tool` mapped: `{id, name,
       type, model, thinking_effort}`. Keep the original `order` for reporting.
+      A `claude`-type entry can also dispatch in-session (via the **Task tool**) when its
+      picked task's `run_as` is `subagent` — carry that in the report.
     - **Skipped agents** — name + reason (e.g. "tool `zcode` has no spawnable
       CLI").
 
@@ -470,13 +561,15 @@ Each **round**:
    whose `tool` maps to a supported CLI (opencode / kimi / codex /
    claude code / copilot);
 3. for **each** supported agent, fetch that agent's **active** tasks (matched by
-   `agent_id`) and record whether it has an `open` task (and the **id of the
-   first open task**, by `order` then `created_at`), and whether it has **any
-   active task at all** (`open` / `in_progress` / `blocked`);
+   `agent_id`) and record whether it has an `open` task (and the **id and
+   `run_as` of the first open task**, by `order` then `created_at`), and
+   whether it has **any active task at all** (`open` / `in_progress` /
+   `blocked`);
 4. decide a branch (below): **done**, **dispatch**, or **wait**;
 5. on **dispatch**, spawn one worker per supported agent that has an `open`
-   task, **in parallel**, then `wait` for all of them, then start the next
-   round;
+   task, **in parallel** — dispatching each on its picked task's `run_as`
+   (headless CLI, or in-session subagent for a compatible `claude code`
+   agent) — then `wait` for all of them, then start the next round;
 6. on **done**, stop; on **wait**, poll on an interval and start the next round
    (do **not** stop — see **Wait** below).
 
@@ -516,7 +609,9 @@ The `tool` → CLI mapping is case-insensitive (substring of the `tool` field):
 `copilot`→copilot, anything else→skip. Apply each agent's `model` and
 `thinking_effort` to its own CLI: opencode (`-m` / `--variant`), kimi (`-m` /
 `KIMI_MODEL_THINKING_EFFORT`), codex (`-m` / `-c model_reasoning_effort=`),
-claude code (`--model` / `--effort`), copilot (`--model` / `--effort`).
+claude code (`--model` / `--effort`), copilot (`--model` / `--effort`); for
+a `claude code` subagent they ride in the prompt (see
+[Worker prompt](#worker-prompt)).
 
 ### Helper
 
@@ -580,6 +675,9 @@ each agent, record:
   (sort candidates by `order`, then `created_at`; take the first `open` one) —
   this task id is what gets handed to the spawned worker in step 5, and its
   presence drives the **dispatch** branch;
+- that picked task's **`run_as`** (read straight off its record — current app
+  builds always emit it; a missing / null / empty / unrecognized value means
+  `headless`) — this decides **how** the task is dispatched in step 5;
 - whether it has **any active task at all** (`open` / `in_progress` / `blocked`)
   — this drives the **done** / **wait** test in step 4.
 
@@ -600,7 +698,9 @@ If **no** supported agent has **any** active task (`open` / `in_progress` /
 #### Dispatch — at least one agent has an `open` task
 
 If any supported agent has an `open` task, proceed to **step 5** and spawn one
-worker per such agent. After `wait`ing for all of them, **start the next round**
+worker per such agent, dispatching each on its picked task's `run_as`
+(headless CLI, or in-session subagent for a compatible `claude code` agent).
+After `wait`ing for all of them, **start the next round**
 (go back to step 1) so newly-opened tasks — a completed task's subtasks becoming
 actionable, or a blocked task auto-unblocking when its blocker completes — get
 picked up.
@@ -641,13 +741,41 @@ run-to-completion goal.
 
 *(Reached only from step 4 Dispatch.)* For **each** supported agent that has an
 `open` task, build its worker prompt (parameterized by **the open task id**
-picked for that agent in step 3) and spawn it. Use the spawn command for
-that agent's type, applying that agent's own `model` and `thinking_effort`.
-**Launch all of them concurrently** (bash `&`), then `wait` for all to finish
-and collect each exit code. One task per agent per round — each worker's
+picked for that agent in step 3) and spawn it — **dispatching on that task's
+`run_as`** (see
+[Per-task run mode](#per-task-run-mode-run_as-headless-vs-subagent-read-this-first)):
+
+- `run_as` missing / `null` / empty / `"headless"` / unknown → the headless
+  CLI spawn below, applying that agent's own `model` and `thinking_effort`;
+- `run_as` = `"subagent"`, agent type `claude code` (this session's own CLI) → the
+  **in-session subagent dispatch** below;
+- `run_as` = `"subagent"`, any other agent type → **fall back to the headless
+  CLI spawn** (a foreign CLI cannot run as a subagent of this session).
+
+**Launch all of the round's workers concurrently**, then `wait` for all of
+them and collect each result. One task per agent per round — each worker's
 `lc-start-work` verifies, claims, works, and completes the **named task id**;
 do not spawn a second worker for the same agent in the same round even if it
 has multiple open tasks (the next round picks up the next one).
+
+**If the picked task's `run_as` is `subagent` and the agent type is
+`claude code`** — dispatch an **in-session subagent** with the **Task tool** (the only
+compatible subagent case; every other agent type falls back to its headless
+spawn below):
+
+- `subagent_type`: `general-purpose` — a fresh agent with full tools; it loads and runs the **`lc-start-work`** skill from this same plugin's cache.
+- `description`: short and identifying, e.g. `"<AGENT_NAME> worker: <TASK_ID>"`.
+- `prompt`: the **subagent worker prompt** (see
+  [Worker prompt](#worker-prompt)) filled in with the effort name, the picked
+  task id, and the agent's `model` / `thinking_effort` as the agent profile.
+- Parallelism: when the round has other workers (bash-spawned CLIs or further
+  subagents), launch the subagents first so they run while the bash block
+  executes, then collect each subagent's result (blocking) after the CLI
+  workers finish. A subagent-only round can issue all its subagent spawns
+  together — they run concurrently and their results return together.
+- No cwd flag — the subagent inherits this session's cwd. No CLI login needed.
+- The assigned `model` / `thinking_effort` ride in the prompt as the agent
+  profile (advisory; the subagent otherwise inherits this session's model).
 
 **If the agent type is `opencode`** — model via `-m <provider/model>` (omit if
 the agent's `model` is empty), thinking effort via `--variant` (omit if
@@ -702,8 +830,21 @@ completion):
 copilot -C "<CWD>" --model <model> --effort <effort> --yolo -s --no-ask-user -p "<worker prompt for this agent>"
 ```
 
-**Parallel pattern** (example for all five agent types — spawn only the ones
-that have an `open` task this round):
+**Parallel pattern** (example for all six dispatch shapes — spawn only the
+ones that have an `open` task this round; a `claude code` agent dispatches
+in-session on a `subagent` task):
+
+First launch this round's subagents (Task tool calls, `run_in_background: true` — they run while the
+bash block below executes):
+
+```
+Task(subagent_type="general-purpose",
+     description="<AGENT_NAME> worker: <TASK_ID>",
+     prompt=<claude code subagent worker prompt>,
+     run_in_background=true)        # collect later (blocking)
+```
+
+Then the headless CLI workers:
 
 ```bash
 # opencode worker
@@ -725,15 +866,25 @@ wait "$OPENCODE_PID" "$KIMI_PID" "$CODEX_PID" "$CLAUDE_PID" "$COPILOT_PID"
 # report each exit code
 ```
 
-Report each worker's pass/fail by its exit code:
+Finally block on each subagent's result and report it.
 
-- **Exit 0** → that worker finished (it claims, works, and completes its task
-  on its own via `lc-start-work`).
-- **Non-zero exit** → that worker failed. **Do not retry it in this round**, and
-  do not complete anything on its behalf — its task is still `open` (or
-  `in_progress` if it crashed mid-work), and the next round will reconsider it.
-  **One failing worker does not abort the others** — `wait` returns each exit
-  code independently, so report all of them.
+Report each worker's pass/fail:
+
+- **CLI worker, exit 0** → that worker finished (it claims, works, and
+  completes its task on its own via `lc-start-work`).
+- **CLI worker, non-zero exit** → that worker failed. **Do not retry it in
+  this round**, and do not complete anything on its behalf — its task is
+  still `open` (or `in_progress` if it crashed mid-work), and the next round
+  will reconsider it.
+- **Subagent, completed and its final message confirms the task was worked** →
+  finished, same as a CLI exit 0 (its `lc-start-work` claims, works, and
+  completes the task itself).
+- **Subagent, errored or returned without completing the task** → failed;
+  handle exactly like a non-zero CLI exit (no retry this round, nothing
+  completed on its behalf, next round reconsiders).
+- **One failing worker does not abort the others** — `wait` returns each exit
+  code independently and subagent results arrive independently, so report all
+  of them.
 
 If a spawn command itself is rejected (e.g. an unknown flag on a different
 build), check that worker CLI's `--help` for the exact headless flags on that
@@ -753,14 +904,27 @@ long as any non-completed agent task exists (or until the user interrupts).
 
 ### Worker prompt
 
-The single-sentence instruction passed to each spawned worker, parameterized
-by **the open task id** picked for that agent in step 3 (step 5 fills it in
-per agent). It references the task id, **not** the agent id — the worker's
-`lc-start-work` works exactly that task regardless of agent assignment:
+The instruction passed to each spawned worker, parameterized by **the open
+task id** picked for that agent in step 3 (step 5 fills it in per agent). It
+references the task id, **not** the agent id — the worker's `lc-start-work`
+works exactly that task regardless of agent assignment.
+
+**Headless CLI worker** (every headless dispatch — including `subagent` tasks
+that fell back to headless):
 
 ```
 Use the lc-start-work skill to do one task's worth of work on the '<EFFORT_NAME>' effort for the task with id '<TASK_ID>'. You are running headless; make reasonable assumptions and do not ask questions.
 ```
+
+**In-session subagent** (`claude code` agent, `run_as` = `subagent` — the
+compatible case). Same instruction plus the agent profile:
+
+```
+Use the lc-start-work skill to do one task's worth of work on the '<EFFORT_NAME>' effort for the task with id '<TASK_ID>'. You are running as an in-session subagent on behalf of the LocalCortex agent '<AGENT_NAME>' (assigned profile: model '<MODEL>', thinking effort '<THINKING_EFFORT>' — advisory; you inherit this session's model). Make reasonable assumptions and do not ask questions.
+```
+
+(Omit the parenthesized profile clause when the agent's `model` /
+`thinking_effort` is empty; keep the "on behalf of" naming either way.)
 
 ### Notes for the run
 
@@ -774,6 +938,10 @@ Use the lc-start-work skill to do one task's worth of work on the '<EFFORT_NAME>
   retooling an agent in the app's Settings (or via `create agent` / `update
   agent` / `delete agent`) takes effect on the next round — no need to re-run
   setup.
+- **Each task's run mode is re-read every round.** `run_as` rides the task
+  record fetched in step 3, so flipping a task's Run As picker in the app
+  (headless ↔ subagent) takes effect on the very next dispatch — no re-run
+  needed.
 - **Fail safe, per worker.** If a spawn fails, leave that agent's tasks as they
   are; do not complete a task on a worker's behalf. Other workers in the same
   round are unaffected. The next round (or a human) picks up unfinished work.
@@ -807,7 +975,8 @@ Use the lc-start-work skill to do one task's worth of work on the '<EFFORT_NAME>
   output. The user must run the relevant worker login
   (`opencode auth login` / `kimi login` / `codex login` / `claude auth login` /
   `copilot login`)
-  separately.
+  separately. (In-session `claude code` subagents have no login — they run inside
+  this session.)
 
 ---
 
@@ -821,7 +990,8 @@ running, a **wait** round reports the pending `in_progress` / `blocked` tasks
 per agent and that it is polling — it is not a terminal outcome. State plainly
 that **no scheduled automation was created** — there is nothing to stop or
 delete (contrast with `lc-orchestrate-agents`, which creates a recurring
-5-minute job). Remind the user the spawned worker CLIs must stay logged in for
-rounds to do real work, and that **the agent roster is re-read every round**, so
-editing agents in the app takes effect on the next round without re-running
-setup.
+5-minute job). Remind the user the spawned headless worker CLIs must stay
+logged in for their rounds to do real work (in-session `claude code` subagents
+need no login), and that **the agent roster and every task's `run_as` are
+re-read each round**, so editing agents or flipping a task's Run As picker in
+the app takes effect on the next round without re-running setup.

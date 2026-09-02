@@ -32,8 +32,12 @@ required.
   worker spawn, but **no scheduled automation**. Instead it loops in the
   current session — dispatching one open task per supported agent each round,
   waiting for all workers, and re-checking — until no supported agent has any
-  active task, then stops on its own. Use for one-shot, run-to-completion
-  delegation. See
+  active task, then stops on its own. Each dispatched task honors its
+  `run_as` field (read from the app): `headless` (the default) spawns the
+  agent's CLI headless; `subagent` runs the task as an **in-session subagent
+  via the Task tool** when the agent's `tool` is this session's own CLI
+  (`claude code`), falling back to headless otherwise.. Use for one-shot,
+  run-to-completion delegation. See
   [`skills/lc-orchestrate-agent-goal/SKILL.md`](skills/lc-orchestrate-agent-goal/SKILL.md).
 - **`lc-start-work`** (`/lc-start-work`) — work one caller-chosen task id on
   demand: verify it belongs to the named Effort and is open, claim it, do the
