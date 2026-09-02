@@ -31,6 +31,13 @@ codex plugin marketplace add <path-to>/LocalCortex---Plugins/codex-plugin
 codex plugin add localcortex@localcortex-plugins
 ```
 
+**GitHub Copilot CLI** — [`copilot-plugin`](copilot-plugin):
+
+```bash
+copilot plugin marketplace add <path-to>/LocalCortex---Plugins/copilot-plugin
+copilot plugin install localcortex@localcortex-plugins
+```
+
 **ZCode** — [`zcode-plugin`](zcode-plugin):
 
 In the ZCode client, open **Settings → Plugin Management → Discover → `+`**, then
@@ -59,7 +66,7 @@ npx skills add ./opencode-skill -a opencode
 
 ### 2. Use the skills
 
-Once installed, the `localcortex` plugin exposes four skills. The typical
+Once installed, the `localcortex` plugin exposes six skills. The typical
 sequence to go from empty Effort → worked tasks:
 
 - **`lc-create-from-template`** — populate an Effort with tasks materialized from a
@@ -94,6 +101,7 @@ returns its id, workspace folder, and on-disk path.
 |---|---|---|
 | [`claude-plugin`](claude-plugin) | Claude Code | A local marketplace + the `localcortex` plugin (skill: `start-work` / `/start-work`). |
 | [`codex-plugin`](codex-plugin) | Codex | A local marketplace + the `localcortex` plugin (skill: `start-work`). |
+| [`copilot-plugin`](copilot-plugin) | GitHub Copilot CLI | A local marketplace + the `localcortex` plugin (skills: `lc-*`). |
 | [`zcode-plugin`](zcode-plugin) | ZCode | A local marketplace + the `localcortex` plugin (skill: `start-work` / `/start-work`). |
 | [`kimi-plugin`](kimi-plugin) | Kimi Code | A local marketplace + the `localcortex` plugin (skill: `start-work` / `/skill:start-work`). |
 | [`opencode-skill`](opencode-skill) | OpenCode | A `skills/` tree installable via the [`skills`](https://www.npmjs.com/package/skills) CLI (skills: `lc-fetch-effort`, `lc-fetch-agent-task`, `lc-complete-task`, `lc-start-work`, `lc-start-job`). |
@@ -137,6 +145,17 @@ LocalCortex---Plugins/
 │               └── start-work/
 │                   ├── SKILL.md
 │                   └── scripts/lc.js   # JXA helper wrapping the 7 sdef commands
+├── copilot-plugin/                # GitHub Copilot CLI distribution
+│   ├── marketplace.json           # local marketplace (registers localcortex)
+│   └── plugins/
+│       └── localcortex/
+│           ├── plugin.json
+│           ├── README.md
+│           └── skills/
+│               ├── lc-create-from-template/
+│               │   ├── SKILL.md
+│               │   └── scripts/lc.js
+│               └── ...
 ├── zcode-plugin/                  # ZCode distribution
 │   ├── marketplace.json           # local marketplace (registers localcortex)
 │   └── plugins/
@@ -170,6 +189,7 @@ LocalCortex---Plugins/
 See each distribution's README for ecosystem-specific install instructions:
 [`claude-plugin`](claude-plugin/README.md),
 [`codex-plugin`](codex-plugin/README.md),
+[`copilot-plugin`](copilot-plugin/README.md),
 [`zcode-plugin`](zcode-plugin/README.md),
 [`kimi-plugin`](kimi-plugin/README.md), and
 [`opencode-skill`](opencode-skill/README.md).
