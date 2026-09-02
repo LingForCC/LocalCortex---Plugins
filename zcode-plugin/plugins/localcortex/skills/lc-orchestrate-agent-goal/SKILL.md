@@ -2,25 +2,22 @@
 name: lc-orchestrate-agent-goal
 description: >-
   Run a LocalCortex multi-agent orchestrator in goal mode — the macOS task
-  manager app — that loops in the current session (no scheduled automation)
-  and dispatches each app-defined agent's open work until the effort is done.
-  Like lc-orchestrate-agents, it reads the roster, model, and thinking effort
-  FROM THE APP (`list agents`) — the user supplies only the Effort and a
-  working directory. Each loop iteration re-reads the roster and, for each
-  supported agent (opencode, kimi, codex, claude code, copilot, zcode) with an
-  open task, picks one task and honors that task's `run_as` — `headless`
-  (the default) spawns the agent's CLI headless, `subagent` runs the work as
-  an in-session subagent via the Agent tool when the agent's tool is this
-  session's own CLI (a `zcode`-tool agent), falling back to headless when it
-  is not — with a one-line prompt telling it to run lc-start-work for that
-  task's id. After each round it re-checks: if any supported agent still has
-  an active task it loops again, and when none remain it stops on its own.
-  Drives LocalCortex through its JXA/AppleScript
-  surface (osascript), not MCP. Use for one-shot, run-to-completion multi-agent
-  delegation — e.g. "orchestrate all agents on Build until done".
+  manager app — looping in the current session (no scheduled automation) until
+  every app-defined agent's open work is done. Reads the roster, models, and
+  thinking efforts FROM THE APP; the user supplies only the Effort and a
+  working directory. Each round, for each supported agent (opencode, kimi,
+  codex, claude code, copilot, zcode) with an open task, it picks one task and
+  honors its `run_as`: `headless` (the default) spawns the agent's CLI
+  headless; `subagent` runs the work as an in-session subagent via the Agent
+  tool when the agent's tool is this session's own CLI, else falls back to
+  headless — each with a one-line prompt to run lc-start-work for that task
+  id. Loops until no active tasks remain, then stops. Drives LocalCortex
+  through its JXA/AppleScript surface (osascript), not MCP. Use for one-shot,
+  run-to-completion multi-agent delegation — e.g. "orchestrate all agents on
+  Build until done".
 argument-hint: "[effort name]"
 allowed-tools: [Agent, Bash, Read]
-version: 0.1.1
+version: 0.1.2
 license: MIT
 ---
 
