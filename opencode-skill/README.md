@@ -44,6 +44,14 @@ subset each one needs.
   run `lc-start-work` for that task's id. The agent roster, model, and thinking
   effort are read from the app — the user never supplies them. See
   [`skills/lc-orchestrate-agents/SKILL.md`](skills/lc-orchestrate-agents/SKILL.md).
+- **`lc-orchestrate-agent-goal`** — the goal-mode counterpart of
+  `lc-orchestrate-agents`: same setup, roster, and worker spawn, but **no
+  LaunchAgent and no scheduled automation**. Instead it loops in the current
+  OpenCode session — dispatching one open task per supported agent each round
+  (opencode / kimi / codex / claude code / copilot), waiting for all workers,
+  and re-checking — until no supported agent has any active task, then stops on
+  its own. Use for one-shot, run-to-completion delegation. See
+  [`skills/lc-orchestrate-agent-goal/SKILL.md`](skills/lc-orchestrate-agent-goal/SKILL.md).
 - **`lc-skill-creator`** — a **meta-skill** for authoring other `lc-*` skills:
   the authoritative in-plugin reference for the full twelve-command LocalCortex
   JXA surface (read commands, task CRUD, agent CRUD, plus the client-side
@@ -147,7 +155,10 @@ with its tick prompt + runner + logs under
 runs `opencode run --auto` headlessly. To stop it: `launchctl bootout` (or
 `launchctl unload`) the label, then remove the plist and job dir — the skill
 reports the exact label/paths at setup. An idle effort is a silent no-op: ticks
-create nothing and the LaunchAgent keeps firing until you remove it.
+create nothing and the LaunchAgent keeps firing until you remove it. For
+run-to-completion delegation that installs nothing and stops on its own, use
+`lc-orchestrate-agent-goal` instead — it loops in the current session rather
+than scheduling.
 
 ## Layout
 
@@ -165,6 +176,9 @@ opencode-skill/
     │   ├── SKILL.md
     │   └── scripts/lc.js
     ├── lc-orchestrate-agents/
+    │   ├── SKILL.md
+    │   └── scripts/lc.js
+    ├── lc-orchestrate-agent-goal/
     │   ├── SKILL.md
     │   └── scripts/lc.js
     └── lc-skill-creator/

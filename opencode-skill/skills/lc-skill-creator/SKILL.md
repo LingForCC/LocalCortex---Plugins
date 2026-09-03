@@ -49,7 +49,7 @@ twelve, their exact argument and result shapes, the calling conventions every
   `lc-create-from-template`.
 - The user wants to **look up an effort** → use `lc-fetch-effort`.
 - The user wants **recurring multi-agent delegation** → use
-  `lc-orchestrate-agents`.
+  `lc-orchestrate-agents` / `lc-orchestrate-agent-goal`.
 - The user wants to drive LocalCortex through **MCP** (not JXA) → this plugin is
   JXA-only; point them at the app's MCP surface instead.
 
