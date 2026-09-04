@@ -6,9 +6,9 @@ description: >-
   every app-defined agent's open work is done. Reads the roster, models, and
   thinking efforts FROM THE APP; the user supplies only the Effort and a
   working directory. Each round, for each supported agent (opencode, kimi,
-  codex, claude code, copilot) with an open task, it picks one task and
+  codex, claude code, copilot, zcode) with an open task, it picks one task and
   honors its `run_as`: `headless` (the default) spawns the agent's CLI
-  headless; `subagent` runs the work as an in-session subagent via the
+  headless (`zcode` via the bundled app-server worker); `subagent` runs the work as an in-session subagent via the
   spawn_agent tool when the agent's tool is this session's own CLI, else falls back to
   headless — each with a one-line prompt to run lc-start-work for that task
   id. Loops until no active tasks remain, then stops. Drives LocalCortex
@@ -93,16 +93,19 @@ This skill does **not** ask the user for agents, models, or efforts. It reads
   | `codex` | `codex` | headless, or in-session subagent via the **spawn_agent tool** on a `subagent` task |
   | `claude` | `claude code` | headless (subagent falls back to headless) |
   | `copilot` | `copilot` | headless (subagent falls back to headless) |
-  | anything else (e.g. `zcode`) | **unsupported — skipped** | — |
+  | `zcode` | `zcode` | headless via the bundled app-server worker (subagent falls back to headless) |
+  | anything else | **unsupported — skipped** | — |
 
-  So `"opencode"`, `"kimi code"`, `"codex"`, `"claude code"`, and `"copilot"`
+  So `"opencode"`, `"kimi code"`, `"codex"`, `"claude code"`, `"copilot"`, and `"zcode"`
   all map correctly and dispatch headless by default (a foreign CLI's
   `subagent` task falls back to headless — it cannot run as a subagent of this
-  session). `codex` maps to **this session itself**: those agents dispatch
+  session; `zcode` has no CLI of its own here — it dispatches through the
+  bundled **app-server protocol worker** `scripts/zcode-worker.js`; see
+  [Supported agents](#supported-agents)). `codex` maps to **this session itself**: those agents dispatch
   through the **spawn_agent tool** when the picked task's `run_as` is `subagent` (see
   [Per-task run mode](#per-task-run-mode-run_as-headless-vs-subagent-read-this-first)).
 - **`model`** and **`thinking_effort`** are applied to opencode, kimi, codex,
-  claude code, and copilot headless spawns
+  claude code, copilot, and zcode headless spawns
   (see [Model & thinking-effort support](#model--thinking-effort-support-read-this-first)).
   For `codex` subagent dispatches they are stated in the subagent prompt as
   the agent profile — advisory, since a subagent inherits this session's
@@ -122,7 +125,7 @@ id it is given).
 
 The headless CLIs expose model and thinking-effort selection via flags / env.
 Each agent's `model` / `thinking_effort` (read from the app) is applied to the
-five headless CLIs; the `codex` subagent row below carries them in the prompt
+six headless dispatches; the `codex` subagent row below carries them in the prompt
 instead (advisory — a subagent inherits this session's model).
 
 | agent type (from `tool`) | model (headless) | thinking effort (headless) |
@@ -133,6 +136,7 @@ instead (advisory — a subagent inherits this session's model).
 | **codex** (subagent) | ➖ stated in the subagent prompt (advisory; inherits this session's model) | ➖ stated in the subagent prompt (advisory) |
 | **claude code** | ✅ `--model <alias-or-id>` | ✅ `--effort <low\|medium\|high\|xhigh\|max\|ultracode>` |
 | **copilot** | ✅ `--model <model-or-auto>` | ✅ `--effort`, `--reasoning-effort <none\|minimal\|low\|medium\|high\|xhigh\|max>` — requires an explicit effort-capable model; `auto` rejects it |
+| **zcode** | ✅ `--model <provider/model or bare model id>` on the worker (bare ids default to the `bigmodel` provider; **session-scoped** — never touches the shared config, so parallel zcode workers may run different models) | ✅ `--effort <low\|high\|max>` (validated against the chosen model's reasoning variants; an unsupported value warns and continues on the model default) |
 
 ## Per-task run mode (`run_as`): headless vs subagent (read this first)
 
@@ -154,7 +158,7 @@ verbatim) and branches:
 |---|---|---|
 | missing / null / empty / `"headless"` / unknown | any supported CLI | **headless CLI spawn** — the existing behavior, unchanged |
 | `"subagent"` | `codex` — this session's own CLI | **in-session subagent** via the **spawn_agent tool** — the compatible case |
-| `"subagent"` | `opencode` / `kimi` / `claude code` / `copilot` | **fall back to headless** — the compatibility rule |
+| `"subagent"` | `opencode` / `kimi` / `claude code` / `copilot` / zcode | **fall back to headless** — the compatibility rule |
 
 **The compatibility rule:** `subagent` means "run this task *inside the
 current session*, with this session's own subagent mechanism, using the
@@ -258,7 +262,7 @@ This skill does **two things**:
 - **At least one supported agent is defined in the app.** Agents are created in
   the app's Settings (or via `create agent`); each agent's `tool` must map to
   one of the supported CLIs (opencode / kimi / codex / claude code /
-  copilot — a `codex` agent dispatches headless by default, or in-session via
+  copilot / zcode — a `codex` agent dispatches headless by default, or in-session via
   the **spawn_agent tool** on a `subagent` task). If no agent is defined, or none maps to a
   supported CLI, the skill does nothing and tells the user.
 - **The spawned worker CLIs are installed and logged in.** Headless workers
@@ -269,7 +273,8 @@ This skill does **two things**:
   headless scripting). Tell the user to run the relevant logins once before
   relying on this
   orchestration. (In-session `codex` subagents need no login — they run
-  inside this session.)
+  inside this session. Headless `zcode` workers need no login either — they
+  reuse the machine's shared ZCode credentials.)
 - **The `lc-start-work` skill is installed** for every spawned agent (in that
   agent's plugin cache). The delegation prompt assumes the worker can load it.
   (A `codex` subagent loads it from this same plugin's cache.)
@@ -302,6 +307,22 @@ This skill does **two things**:
   omitted) rejects reasoning-effort configuration and exits non-zero, so
   omit `--effort` whenever the model is `auto` or unset.
 
+- **For zcode agents (headless)**, three machine preconditions — all already
+  satisfied on a box that runs the ZCode desktop app: (1) **`node` ≥ 22 on
+  PATH** (the worker is plain Node, no dependencies); (2) **ZCode.app
+  installed** — the worker drives the bundled
+  `/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs` (override with
+  the `ZCODE_CLI` env var if the app lives elsewhere or the path moves after
+  an update); (3) **a model provider configured in `~/.zcode/cli/config.json`**
+  — a top-level `provider` object (e.g. `provider.bigmodel` with
+  `options.apiKey` + `options.baseURL`) plus a `model.main` string ref (e.g.
+  `"bigmodel/glm-5.3"`). Without it every worker run fails with `Model
+  config is missing`. The agent's `model` field is `bigmodel/<id>` or a bare
+  model id (bare defaults to the `bigmodel` provider — e.g. `glm-5.3`,
+  `glm-5.3-flash`); `thinking_effort` must be one of the chosen model's
+  reasoning variants (`low` / `high` / `max` on GLM-5.x) — an unsupported
+  value logs a warning and runs on the model default.
+
 ## Supported agents
 
 Only agents whose `tool` maps to one of these CLIs can be delegated to (see the
@@ -319,6 +340,7 @@ it cannot run as a subagent of this session); `codex` additionally dispatches
 | `codex` (in-session subagent) | spawn_agent tool call — `description: "<agent name> worker: <task id>"`, `prompt: <subagent worker prompt>` (see [Per-task run mode](#per-task-run-mode-run_as-headless-vs-subagent-read-this-first)). No cwd flag (inherits this session's cwd); model / thinking effort are stated in the prompt as the agent profile. Dispatched instead of the headless spawn when the picked task's `run_as` is `subagent` |
 | `claude code` | `cd "<CWD>" && claude -p --model <model> --effort <effort> --dangerously-skip-permissions "<worker prompt>"` (`-p` is non-interactive print mode; model via `--model` alias or id; thinking effort via `--effort`; `--dangerously-skip-permissions` is yolo — skips all permission prompts; cwd is set by `cd` — claude has no cwd flag. Omit `--model` / `--effort` when the agent's `model` / `thinking_effort` is empty) |
 | `copilot` | `copilot -C "<CWD>" --model <model> --effort <effort> --yolo -s --no-ask-user -p "<worker prompt>"` (`-p` is non-interactive prompt mode and exits after completion; model via `--model` id or `auto`; thinking effort via `--effort` — alias `--reasoning-effort`; `--yolo` is yolo — auto-approves all tools, paths, and URLs (tool auto-approval is required in non-interactive mode, where permission prompts cannot be answered); cwd is set by `-C`; `-s` outputs only the agent response; `--no-ask-user` disables clarifying questions. Omit `--model` / `--effort` when the agent's `model` / `thinking_effort` is empty; also omit `--effort` whenever `--model` is omitted or `auto` — model `auto` rejects reasoning-effort configuration and exits non-zero) |
+| `zcode` | `node "$WORKER_JS" --cwd "<CWD>" --model <model> --effort <effort> "<worker prompt>"` (`$WORKER_JS` resolves to this skill's `scripts/zcode-worker.js` — see [Helper setup](#helper-setup-do-this-once-up-front); the worker spawns ZCode's bundled `zcode.cjs app-server` itself, creates a session, pins model / thought level / `yolo` mode **per session** (no shared-config mutation — parallel zcode workers may use different models), sends the prompt, prints the final assistant reply to stdout, exit 0 on success; model is `provider/model` or a bare id defaulting to `bigmodel`; effort is `low`/`high`/`max`; ~7 s protocol startup overhead per task. Omit `--model` / `--effort` when the agent's `model` / `thinking_effort` is empty) |
 
 The **worker prompt** is the same one-sentence instruction for every agent,
 parameterized by **that agent's picked task id** (see [Worker prompt](#worker-prompt)).
@@ -458,6 +480,7 @@ osascript -l JavaScript "$LC_JS" agents-list
     | `codex` | `codex` |
     | `claude` | `claude code` |
     | `copilot` | `copilot` |
+    | `zcode` | `zcode` |
     | else | unsupported |
 
     Build two lists:
@@ -465,14 +488,14 @@ osascript -l JavaScript "$LC_JS" agents-list
       type, model, thinking_effort}`. Keep the original `order` for reporting.
       A `codex`-type entry can also dispatch in-session (via the **spawn_agent tool**) when its
       picked task's `run_as` is `subagent` — carry that in the report.
-    - **Skipped agents** — name + reason (e.g. "tool `zcode` has no spawnable
+    - **Skipped agents** — name + reason (e.g. "tool `cursor` has no spawnable
       CLI").
 
 - **If the supported list is empty** (no agents defined, or none map to a known
   CLI) → **stop and inform the user.** List what was found (if anything) and
   why each was skipped, and tell them to define agents in the app's Settings
   (or via `create agent`) with `tool` set to `opencode`, `kimi`, `codex`,
-  `claude code`, or `copilot`.
+  `claude code`, `copilot`, or `zcode`.
   **Do not enter the loop.**
 
 ### Step 4 — Enter goal mode (no automation is created)
@@ -595,10 +618,12 @@ never touch a task another worker already started (`in_progress`).
 
 The `tool` → CLI mapping is case-insensitive (substring of the `tool` field):
 `opencode`→opencode, `kimi`→kimi, `codex`→codex, `claude`→claude code,
-`copilot`→copilot, anything else→skip. Apply each agent's `model` and
+`copilot`→copilot, `zcode`→zcode (headless via the bundled
+`zcode-worker.js`), anything else→skip. Apply each agent's `model` and
 `thinking_effort` to its own CLI: opencode (`-m` / `--variant`), kimi (`-m` /
 `KIMI_MODEL_THINKING_EFFORT`), codex (`-m` / `-c model_reasoning_effort=`),
-claude code (`--model` / `--effort`), copilot (`--model` / `--effort`); for
+claude code (`--model` / `--effort`), copilot (`--model` / `--effort`), zcode
+(`--model` / `--effort` on the worker); for
 a `codex` subagent they ride in the prompt (see
 [Worker prompt](#worker-prompt)).
 
@@ -638,7 +663,8 @@ osascript -l JavaScript "$LC_JS" agents-list
 - **Success** → `JSON.parse` the array. For each agent record, map its `tool`
   (case-insensitive substring) to a CLI type:
   contains `opencode`→`opencode`, `kimi`→`kimi`, `codex`→`codex`,
-  `claude`→`claude code`, `copilot`→`copilot`, else skip.
+  `claude`→`claude code`, `copilot`→`copilot`, `zcode`→`zcode` (headless via
+  the bundled `zcode-worker.js`), else skip.
   Build the supported roster for this round: one entry per mapped agent
   `{id, name, type, model, thinking_effort}`.
 - **Empty roster** (no agents, or none map to a known CLI) → **abort the loop**
@@ -816,6 +842,28 @@ completion):
 copilot -C "<CWD>" --model <model> --effort <effort> --yolo -s --no-ask-user -p "<worker prompt for this agent>"
 ```
 
+**If the agent type is `zcode`** — spawn the bundled protocol worker
+(`$WORKER_JS`, resolved in
+[Helper setup](#helper-setup-do-this-once-up-front)). Model via `--model`
+(`provider/model` or a bare id defaulting to `bigmodel`; omit if the agent's
+`model` is empty), thinking effort via `--effort` (`low` / `high` / `max`;
+omit if `thinking_effort` is empty), `--cwd` for the working directory. The
+worker runs the session in `yolo` mode (tools auto-approved — required
+unattended), pins model and effort **per session** (parallel zcode workers
+may use different models; the shared `~/.zcode/cli/config.json` is never
+touched), prints the final assistant reply to stdout, and exits 0 on success.
+A `subagent` task falls back to this headless spawn (zcode is not this
+session's CLI):
+
+```bash
+node "$WORKER_JS" --cwd "<CWD>" --model <model> --effort <effort> "<worker prompt for this agent>"
+```
+
+Machine preconditions (node ≥ 22, ZCode.app, a model provider in
+`~/.zcode/cli/config.json`) — see
+[Prerequisites](#prerequisites); if the spawn fails with `Model config is
+missing`, that config is the cause.
+
 **Parallel pattern** (example for all six dispatch shapes — spawn only the
 ones that have an `open` task this round; a `codex` agent dispatches
 in-session on a `subagent` task):
@@ -846,7 +894,10 @@ CLAUDE_PID=$!
 # copilot worker
 ( copilot -C "<CWD>" --model <model> --effort <effort> --yolo -s --no-ask-user -p "<copilot prompt>" ) &
 COPILOT_PID=$!
-wait "$OPENCODE_PID" "$KIMI_PID" "$CODEX_PID" "$CLAUDE_PID" "$COPILOT_PID"
+# zcode headless worker
+( node "$WORKER_JS" --cwd "<CWD>" --model <model> --effort <effort> "<zcode prompt>" ) &
+ZCODE_PID=$!
+wait "$OPENCODE_PID" "$KIMI_PID" "$CODEX_PID" "$CLAUDE_PID" "$COPILOT_PID" "$ZCODE_PID"
 # report each exit code
 ```
 
