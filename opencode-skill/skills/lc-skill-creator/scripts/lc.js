@@ -31,11 +31,17 @@
  *
  * Errors:
  *   - Any failure — bad usage, or an app-level failure (app not installed:
- *     -2700; validation -1001; not_found -1002; conflict -1003) — is surfaced
- *     by throwing, which osascript turns into a non-zero exit with the message
- *     on stderr. The caller reads stderr on non-zero exit. On success, the JSON
- *     result is the script's last expression value and prints to stdout
- *     (exit 0).
+ *     -2700; validation -1001; not_found -1002; conflict -1003; entitlement
+ *     -1004 — no active subscription or trial, every command rejects, reads
+ *     included) — is surfaced by throwing, which osascript turns into a
+ *     non-zero exit with the message on stderr. The caller reads stderr on
+ *     non-zero exit. On success, the JSON result is the script's last
+ *     expression value and prints to stdout (exit 0).
+ *
+ * Write latency (app 1.0.0): the six write commands wait for scroll-quiet
+ * behind the app's scroll-activity gate — during continuous scrolling a write
+ * may take up to ~2 s to reply. Reads stay immediate. Latency only; semantics
+ * are unchanged.
  */
 
 ObjC.import("Foundation");
@@ -266,12 +272,16 @@ function run() {
     }
     case "task-create": {
       // createTask sdef has in-effort / with-name (both required) and optional
-      // notes / due-date / parent / recurrence. There is NO worker param on
-      // create — a new task defaults to worker=none, so an assignment is
-      // applied afterwards via task-update. There is also NO defer-date param
-      // on create — apply it post-create via task-update. Omit parent
-      // entirely when LC_PARENT_ID is unset so a ROOT task is created rather
-      // than a child of an empty/null id. Omit dueDate/recurrence when unset.
+      // notes / due-date / parent / before / recurrence / run-as. There is NO
+      // worker param on create — a new task defaults to worker=none, so an
+      // assignment is applied afterwards via task-update. There is also NO
+      // defer-date param on create — apply it post-create via task-update.
+      // Omit parent entirely when LC_PARENT_ID is unset so a ROOT task is
+      // created rather than a child of an empty/null id. Omit
+      // dueDate/recurrence when unset. `before` (app >= 0.4.7) splices the new
+      // task directly above the anchor id in the anchor's own sibling group.
+      // `runAs` (app 1.0.0) is headless (default) or subagent — the agent run
+      // mode; it may be set without a claim and stays dormant until claimed.
       const effortId = positional[0];
       if (!effortId) throw new Error("usage: lc.js task-create <effortId>");
       const name = envStr("LC_NAME");
@@ -281,30 +291,53 @@ function run() {
       if (notes !== undefined) opts.notes = notes;
       const parent = envOpt("LC_PARENT_ID");
       if (parent !== undefined) opts.parent = parent;
+      const before = envOpt("LC_BEFORE_ID");
+      if (before !== undefined) opts.before = before;
       const dueDate = envOpt("LC_DUE_DATE");
       if (dueDate !== undefined) opts.dueDate = dueDate;
       const recurrence = parseRecurrence(envOpt("LC_RECURRENCE"));
       if (recurrence !== undefined) opts.recurrence = recurrence;
+      const runAs = envOpt("LC_RUN_AS");
+      if (runAs !== undefined) {
+        if (runAs !== "headless" && runAs !== "subagent") {
+          throw new Error("LC_RUN_AS must be 'headless' or 'subagent'");
+        }
+        opts.runAs = runAs;
+      }
       result = app.createTask(opts);
       break;
     }
     case "task-update": {
       // updateTask sdef takes task id (argv, direct param) + any subset of
       // name / notes / status / defer date / due date / recurrence / worker /
-      // agent id / blockers. Only keys that were provided are forwarded;
-      // absent keys are left unchanged on the app side.
+      // agent id / clear agent / blockers / flagged today / run as. Only keys
+      // that were provided are forwarded; absent keys are left unchanged on
+      // the app side.
       //
       // For assigning an app-defined agent, the wire is `LC_WORKER=agent` +
       // `LC_AGENT_ID=<id>` (resolved from the agent name via agent-by-name /
       // agents-list). `LC_WORKER` accepts only `none` or `agent` — 0.3.11
       // rejects `human` (-1001) and deleted the sdef `worker label` param.
+      // An absent LC_AGENT_ID never clears the reference (app 1.0.0): sending
+      // LC_WORKER=agent alone keeps the previous agent id. LC_CLEAR_AGENT=true
+      // is the explicit opt-in that drops the agent reference while keeping
+      // the agent claim (rejected together with LC_AGENT_ID, with an explicit
+      // worker other than agent, and on a task that is not agent-claimed).
+      // An agent-claimed task cannot have subtasks (-1001) — release the
+      // claim (LC_WORKER=none), restructure, re-claim.
       //
       // `blockers` is a list of task-id text on the app side. Entering
       // Blocked REQUIRES blockers — the caller must send LC_STATUS=blocked
       // and LC_BLOCKERS=<ids> in the same call. LC_CLEAR_BLOCKERS=true sends
       // an empty list (the sdef revert path that clears blockers and reverts
       // a Blocked task to open). LC_BLOCKERS wins over LC_CLEAR_BLOCKERS if
-      // both are somehow set.
+      // both are somehow set. An all-completed blocker set is rejected.
+      //
+      // `flaggedToday` (app >= 0.4.7) sets/clears the Today flag. `runAs`
+      // (app 1.0.0) is headless|subagent: a same-call LC_WORKER=none release
+      // re-resets it to headless (release wins), and setting it on a
+      // completed task is rejected (-1001), including a same-call reopen —
+      // reopen first, then set runAs in a second call.
       //
       // Dates CANNOT be cleared via this command (absent = unchanged) — use
       // the app UI's Clear button. Recurrence can be replaced but not cleared
@@ -322,6 +355,7 @@ function run() {
       if (worker !== undefined) opts.worker = worker;
       const agentId = envOpt("LC_AGENT_ID");
       if (agentId !== undefined) opts.agentId = agentId;
+      if (envOpt("LC_CLEAR_AGENT") === "true") opts.clearAgent = true;
       const deferDate = envOpt("LC_DEFER_DATE");
       if (deferDate !== undefined) opts.deferDate = deferDate;
       const dueDate = envOpt("LC_DUE_DATE");
@@ -333,6 +367,19 @@ function run() {
         opts.blockers = blockers;
       } else if (envOpt("LC_CLEAR_BLOCKERS") === "true") {
         opts.blockers = [];
+      }
+      const flagRaw = envOpt("LC_FLAGGED_TODAY");
+      if (flagRaw !== undefined) {
+        if (flagRaw === "true") opts.flaggedToday = true;
+        else if (flagRaw === "false") opts.flaggedToday = false;
+        else throw new Error("LC_FLAGGED_TODAY must be 'true' or 'false'");
+      }
+      const runAs = envOpt("LC_RUN_AS");
+      if (runAs !== undefined) {
+        if (runAs !== "headless" && runAs !== "subagent") {
+          throw new Error("LC_RUN_AS must be 'headless' or 'subagent'");
+        }
+        opts.runAs = runAs;
       }
       result = app.updateTask(taskId, opts);
       break;

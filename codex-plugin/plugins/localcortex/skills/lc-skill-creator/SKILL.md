@@ -63,6 +63,8 @@ twelve, their exact argument and result shapes, the calling conventions every
   dictionary), `macOS/Scripting/AutomationBridge.swift` (DTO ↔ record
   translation + error mapping), and `macOS/Scripting/AgentOperations.swift`
   (the shared operation core). Read them when accuracy matters.
+- Automation is **subscription-gated** (app 1.0.0): with no active
+  subscription or trial, every command rejects with `-1004` — reads included.
 
 ## Helper setup (do this once, up front)
 
@@ -126,7 +128,9 @@ keeps them intact.
   to camelCase keys: `list efforts` → `app.listEfforts({includeArchived})`;
   `in effort` → `inEffort`; `with name` → `withName`; `due date` → `dueDate`;
   `defer date` → `deferDate`; `thinking effort` → `thinkingEffort`;
-  `agent id` → `agentId`. A command's
+  `agent id` → `agentId`; `run as` → `runAs`; `flagged today` →
+  `flaggedToday`; `clear agent` → `clearAgent`; `before` → `before`
+  (unchanged). A command's
   **direct parameter** (e.g. the task id on `get task`) is the first positional
   argument to the JXA method: `app.getTask(taskId)`,
   `app.updateTask(taskId, opts)`.
@@ -147,6 +151,7 @@ App-level error numbers (from LocalCortex):
 | `-1001` | validation — bad UUID/enum, missing required param, or a rule violation (e.g. completing a task that has an incomplete blocker; entering `blocked` without blockers; unknown `agent_id`). |
 | `-1002` | not_found — unknown effort/task/agent/parent/blocker; also returned by `list tasks` on an archived effort unless `include archived` is passed. |
 | `-1003` | conflict — conflicting state. |
+| `-1004` | entitlement — no active subscription or trial. Every command rejects (reads included) with "No active subscription or trial — open LocalCortex and subscribe to re-enable automation." Restore the subscription in the app UI; there is no wire-side workaround. |
 
 ---
 
@@ -172,8 +177,8 @@ Subcommands in the bundled `lc.js`. "argv" = positional args; "env" = env vars.
 
 | subcommand | argv | env (all optional unless noted) | returns |
 |---|---|---|---|
-| `task-create` | `<effortId>` | `LC_NAME` (req), `LC_NOTES`, `LC_PARENT_ID`, `LC_DUE_DATE`, `LC_RECURRENCE` | created task record |
-| `task-update` | `<taskId>` | `LC_NAME`, `LC_NOTES`, `LC_STATUS`, `LC_WORKER` (`none` or `agent`), `LC_AGENT_ID`, `LC_DEFER_DATE`, `LC_DUE_DATE`, `LC_RECURRENCE`, `LC_BLOCKERS`, `LC_CLEAR_BLOCKERS=true` | updated task record |
+| `task-create` | `<effortId>` | `LC_NAME` (req), `LC_NOTES`, `LC_PARENT_ID`, `LC_BEFORE_ID`, `LC_DUE_DATE`, `LC_RECURRENCE`, `LC_RUN_AS` (`headless`/`subagent`) | created task record |
+| `task-update` | `<taskId>` | `LC_NAME`, `LC_NOTES`, `LC_STATUS`, `LC_WORKER` (`none` or `agent`), `LC_AGENT_ID`, `LC_CLEAR_AGENT=true`, `LC_DEFER_DATE`, `LC_DUE_DATE`, `LC_RECURRENCE`, `LC_BLOCKERS`, `LC_CLEAR_BLOCKERS=true`, `LC_FLAGGED_TODAY` (`true`/`false`), `LC_RUN_AS` (`headless`/`subagent`) | updated task record |
 | `task-complete` | `<taskId>` | `LC_COMPLETED=false` (default `true`) | updated task record |
 
 ### Write commands (agents)
@@ -184,6 +189,19 @@ Subcommands in the bundled `lc.js`. "argv" = positional args; "env" = env vars.
 | `agent-update` | `<agentId>` | `LC_NAME`, `LC_TOOL`, `LC_MODEL`, `LC_THINKING_EFFORT` | updated agent record |
 | `agent-delete` | `<agentId>` | — | deleted agent record |
 
+Notes on the newer task params (app ≥ 0.4.7 / 1.0.0):
+
+- `LC_BEFORE_ID` (create) splices the new task **directly above the anchor**
+  in the anchor's own sibling group — an explicit `LC_PARENT_ID` that
+  disagrees with the anchor's parent is rejected (`-1001`); with no parent,
+  the anchor's group is used (roots for a root anchor). Absent appends at the
+  end of the sibling list.
+- `LC_FLAGGED_TODAY` (update) sets/clears the Today flag (daily-focus
+  membership; orthogonal to status and dates).
+- `LC_RUN_AS` (create + update) stores the agent run mode — `headless` (the
+  default) or `subagent`; see the ordering rules in the "cannot do" list
+  below.
+
 ---
 
 ## Record shapes (DTO CodingKeys)
@@ -193,12 +211,13 @@ is_archived`.
 
 **Task (full, `get task` / create / update / complete)** — `id, effort_id, name,
 notes, status, defer_date, due_date, completed_at, order, created_at,
-updated_at, parent_id, recurrence, worker, worker_label, agent_id,
-blocker_ids`.
+updated_at, parent_id, recurrence, worker, worker_label, agent_id, run_as,
+blocker_ids, is_flagged_today`.
 
 **Task summary (`list tasks`)** — same as the full task **except** `notes` is
-omitted and `has_notes` (boolean) is added. Reconstruct the tree by grouping on
-`parent_id` (`null` = root).
+omitted and `has_notes` (boolean) is added (so it carries `run_as` and
+`is_flagged_today` too). Reconstruct the tree by grouping on `parent_id`
+(`null` = root).
 
 **Template** — `id, name, prompt, order, created_at, updated_at`. Read-only on
 this surface.
@@ -219,6 +238,8 @@ recurrence is supplied. Pass it from the helper as a JSON object string in
 - `status` — `open`, `in_progress`, `blocked`, `completed`.
 - `worker` — writable `none` or `agent`; `human` survives as a legacy
   read-only value on records claimed before 0.3.11.
+- `run_as` — `headless` (the default) or `subagent`: how the claimed agent
+  executes the task. Claim-scoped metadata, not a worker kind.
 - (Recurrence enums as above.)
 
 ### By-name composites
@@ -333,11 +354,43 @@ silently fake it.
   app-defined agent, use `LC_WORKER=agent` + `LC_AGENT_ID=<id>` (resolved from
   the agent name via `agent-by-name`). `worker_label` survives only as a
   read-back field naming a stale human claim.
+- **An absent `agent id` never clears the reference (1.0.0).** Re-sending
+  `LC_WORKER=agent` without `LC_AGENT_ID` keeps the task's previous agent
+  reference (the pre-1.0.0 silent-clear behavior is gone).
+  `LC_CLEAR_AGENT=true` is the explicit opt-in that drops the agent reference
+  while keeping the agent claim — rejected (`-1001`) together with
+  `LC_AGENT_ID`, with an explicit worker other than `agent`, and on a task
+  that is not agent-claimed. Releasing the whole claim is `LC_WORKER=none`.
+- **An agent-assigned task cannot have subtasks (`-1001`, both directions).**
+  Creating a subtask under an agent-claimed parent is rejected, and setting
+  `worker agent` on a task that already has subtasks is rejected. Release the
+  claim first (`LC_WORKER=none`), restructure, then re-claim. (`clear agent`
+  doubles as the repair that clears the reference on a legacy violating row
+  while keeping the claim.)
+- **`run as` is claim-scoped and has ordering rules (1.0.0).** `LC_RUN_AS`
+  (`headless`, the default | `subagent`) may be set without an agent claim —
+  it stays dormant until the task is claimed. A same-call `LC_WORKER=none`
+  release re-resets it to `headless` (release wins). Setting it on a completed
+  task is rejected (`-1001`), *including* a same-call reopen
+  (`LC_STATUS=open` + `LC_RUN_AS`): reopen first, then set `run as` in a
+  second call.
+- **Automation is subscription-gated (`-1004`, 1.0.0).** With no active
+  subscription or trial, *every* command rejects — reads included. Restore the
+  subscription in the app UI; there is no wire-side workaround.
+- **Write commands wait for scroll-quiet (1.0.0).** The six writers
+  (create/update/complete task, create/update/delete agent) suspend behind the
+  app's scroll-activity gate: during continuous scrolling a write may take up
+  to ~2 s to reply; reads stay immediate. Latency only — semantics are
+  unchanged.
 - **Blocked-state invariants are enforced server-side.** Entering `blocked`
-  *requires* `blockers` in the same call; completing a task (or any descendant)
-  with an incomplete blocker is rejected (`-1001`); a blocked task with an
-  incomplete blocker cannot switch to `open`/`in_progress`. You cannot bypass
-  these over the wire — complete the blockers first.
+  *requires* `blockers` in the same call, and an **all-completed blocker set
+  is rejected** (matching the UI, where completed tasks are never blocker
+  candidates); completing a task (or any descendant) with an incomplete
+  blocker is rejected (`-1001`); a blocked task with an incomplete blocker
+  cannot switch to `open`/`in_progress`; reopening a task (`complete task`
+  with `completed false`) that has an incomplete blocker lands at `blocked`
+  instead of `open` (reopen redirect). You cannot bypass these over the wire —
+  complete the blockers first.
 - **`list tasks` hides an archived effort's tasks** (returns `-1002`) unless
   `include archived` is passed. Archived efforts themselves are hidden from
   `list efforts` unless opted in. (Id-based calls like `get task` /
