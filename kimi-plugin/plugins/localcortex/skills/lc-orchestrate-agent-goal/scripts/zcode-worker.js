@@ -2,13 +2,14 @@
 // lc-zcode-worker — one-shot headless ZCode worker over the app-server protocol.
 //
 // Spawns `zcode.cjs app-server`, creates a session, optionally pins model /
-// thought level / permission mode, sends one prompt, waits for the turn to
-// complete, prints the final assistant reply to stdout, exits.
+// thought level / permission mode, sends one prompt, waits for the main
+// session's turn to complete (no time limit — turns may run for hours;
+// subagent traffic never counts as completion), prints the final assistant
+// reply to stdout, exits.
 //
 // Usage:
 //   node zcode-worker.js --cwd <dir> [--model provider/model | model] \
-//        [--effort low|high|max] [--mode build|edit|plan|yolo] \
-//        [--timeout <seconds>] "prompt"
+//        [--effort low|high|max] [--mode build|edit|plan|yolo] "prompt"
 //
 // Env:
 //   ZCODE_CLI   path to zcode.cjs (default: the copy inside ZCode.app)
@@ -21,11 +22,11 @@ const DEFAULT_CLI =
   '/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs';
 
 function parseArgs(argv) {
-  const out = { mode: 'yolo', timeout: 1800 };
+  const out = { mode: 'yolo' };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--cwd' || a === '--model' || a === '--effort' || a === '--mode' || a === '--timeout')
+    if (a === '--cwd' || a === '--model' || a === '--effort' || a === '--mode')
       out[a.slice(2)] = argv[++i];
     else rest.push(a);
   }
@@ -43,14 +44,23 @@ function main() {
 
   let nextId = 1;
   const pending = new Map(); // id -> {resolve, reject}
-  const state = { status: 'idle', turnCount: 0, turnCompleted: false, done: null, failed: null };
+  const state = {
+    status: 'idle', turnCount: 0, turnCompleted: false,
+    mainSessionId: null, mainTurnId: null, sent: false,
+    done: null, failed: null,
+  };
 
   function send(msg) { child.stdin.write(JSON.stringify(msg) + '\n'); }
   function request(method, params, timeoutMs = 20000) {
     const id = nextId++;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { pending.delete(id); reject(new Error(`${method} timed out`)); }, timeoutMs);
-      pending.set(id, { resolve: (v) => { clearTimeout(timer); resolve(v); }, reject: (e) => { clearTimeout(timer); reject(e); } });
+      const timer = timeoutMs
+        ? setTimeout(() => { pending.delete(id); reject(new Error(`${method} timed out`)); }, timeoutMs)
+        : null;
+      pending.set(id, {
+        resolve: (v) => { if (timer) clearTimeout(timer); resolve(v); },
+        reject: (e) => { if (timer) clearTimeout(timer); reject(e); },
+      });
       send({ id, method, params });
     });
   }
@@ -75,16 +85,33 @@ function main() {
       m.error ? p.reject(new Error(JSON.stringify(m.error))) : p.resolve(m.result);
       return;
     }
-    // notifications
+    // notifications — scoped to OUR main session/turn so traffic from
+    // subagents spawned by the main session never fakes a completion signal
+    // or pollutes our state.
     const kind = m.params?.kind;
-    if (m.method === 'state.updated') Object.assign(state, m.params.patch || {});
-    if (m.method === 'computer-use/operation-event' && kind === 'turn-completed') state.turnCompleted = true;
+    if (m.method === 'state.updated') {
+      const p = m.params?.patch || {};
+      const scope = p.scope !== undefined ? p.scope : m.params?.scope;
+      const sid = p.sessionId !== undefined ? p.sessionId : m.params?.sessionId;
+      if (scope === 'session' && sid === state.mainSessionId) Object.assign(state, p);
+    }
+    if (m.method === 'computer-use/operation-event') {
+      const ev = m.params || {};
+      const isSubagent = typeof ev.sessionId === 'string' && ev.sessionId.startsWith('sess_subagent_agent_');
+      if (!isSubagent && ev.sessionId === state.mainSessionId) {
+        if (kind === 'turn-started' && state.sent && state.mainTurnId == null && ev.turnId != null)
+          state.mainTurnId = ev.turnId; // first main-session turn after send is the turn we await
+        if (kind === 'turn-completed' && state.mainTurnId != null && ev.turnId === state.mainTurnId)
+          state.turnCompleted = true;
+      }
+    }
     if (state.done && (state.turnCompleted || state.status === 'idle')) state.done();
   });
 
   (async () => {
     const created = await request('session/create', { workspace: { workspacePath: args.cwd, workspaceKey: args.cwd } });
     const sessionId = created.session.sessionId;
+    state.mainSessionId = sessionId;
     if (args.model) {
       // Accept "provider/model" or a bare model id (defaults to bigmodel).
       const slash = args.model.indexOf('/');
@@ -97,11 +124,14 @@ function main() {
       catch (e) { console.error(`warning: ${e.message}`); }
     }
     await request('session/setMode', { sessionId, mode: args.mode });
-    await request('session/send', { sessionId, content: args.prompt }, args.timeout * 1000);
+    state.sent = true;
+    await request('session/send', { sessionId, content: args.prompt }, 0);
 
     await new Promise((resolve) => {
       state.done = resolve;
-      setTimeout(resolve, args.timeout * 1000);
+      // No timeout: an agent turn may legitimately run longer than any cap
+      // we could pick, so we wait indefinitely for the main session's
+      // completion signal.
       // already finished?
       if (state.turnCompleted || state.status === 'idle') resolve();
     });
